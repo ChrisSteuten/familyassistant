@@ -119,15 +119,18 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 | `totp_credentials` | TOTP-Geheimnis (feldverschlüsselt), letzter verwendeter Zeitschritt (gegen Wiederverwendung) |
 | `webauthn_credentials` | Credential-ID, öffentlicher Schlüssel, Signaturzähler, Transporte, Name („iPhone von …“) |
 | `recovery_codes` | Hash je Code, verwendet am |
+| `recovery_links` | Hash des Tokens eines Wiederherstellungslinks vom Admin, Nutzer, ausgestellt von, Ablauf, verwendet am (Abschnitt 6.6) |
 | `devices` | Gerät je Nutzer: Name, angelegt, zuletzt gesehen, Status, **Geräteschlüssel** (feldverschlüsselt, GK 3.4.3) |
-| `sessions` | Hash des Sitzungstokens, Gerät, angelegt, zuletzt aktiv, Ablauf, Stufe der letzten starken Anmeldung |
+| `sessions` | Hash des Sitzungstokens, Gerät, angelegt, zuletzt aktiv, Ablauf, Art (normal oder Wiederherstellung), Zeitpunkt der letzten starken Anmeldung |
 | `login_throttle` | Fehlversuche je Konto und je IP-Präfix, nächster erlaubter Versuch |
 | `groups`, `group_members` | Gruppen und Mitgliedschaften |
 | `grants` | Rechte: wer (Nutzer/Gruppe) darf was (Aktion) auf welchem Objekt oder Plugin |
 | `plugins` | ID, Version, Status, Manifest, Hash des Pakets, Signaturschlüssel-ID, bestätigte Rechte |
 | `signing_keys` | Öffentliche Signaturschlüssel, Status (aktiv, zurückgezogen) |
 | `sync_objects` | Objekt-ID, Typ, Besitzer-Plugin, aktuelle Revision, gelöscht (Grabstein), Inhalt (JSON, ggf. feldverschlüsselt) |
-| `sync_changes` | fortlaufende Revision (Sequenz), Objekt, Änderungs-ID des Clients, Gerät, Zeitpunkt |
+| `sync_revision` | eine einzige Zeile mit der zuletzt vergebenen Revision (Abschnitt 9.2) |
+| `sync_changes` | fortlaufende Revision, Objekt, Änderungs-ID des Clients, Gerät, Zeitpunkt, Ergebnis (für die Wiederholung) |
+| `sync_object_versions` | frühere Stände eines Objekts: Objekt, Revision, Inhalt (wie in `sync_objects` ggf. feldverschlüsselt), ersetzt am (Abschnitt 9.2, „Basis aufbewahren“) |
 | `sync_conflicts` | Konflikteinträge: Objekt, Basisrevision, abgelehnte Änderung (oder Löschabsicht), Status |
 | `push_subscriptions` | Endpunkt und Schlüssel je Gerät |
 | `notification_prefs` | Einstellungen je Nutzer, Plugin und Ereignis |
@@ -147,7 +150,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 
 - **Keine offene Registrierung.** Konten entstehen nur über eine Einladung durch einen Admin. Der erste Admin wird bei der Einrichtung per Kommandozeile auf dem Server angelegt.
 - Die Einladung ist ein Link mit zufälligem Token (mindestens 128 Bit), einmalig nutzbar, 7 Tage gültig. Gespeichert wird nur ein Hash des Tokens.
-- Beim Annehmen legt die Person einen Passkey an und/oder ein Passwort plus TOTP. Danach werden 10 Wiederherstellungscodes angezeigt (je 10 Zeichen aus einem Alphabet ohne verwechselbare Zeichen); gespeichert werden nur ihre Hashes.
+- Beim Annehmen legt die Person einen Passkey an und/oder ein Passwort plus TOTP. Danach werden 10 Wiederherstellungscodes angezeigt (je 10 Zeichen aus dem Crockford-Base32-Alphabet: 32 Zeichen ohne die verwechselbaren Buchstaben I, L, O, U [K15]); gespeichert werden nur ihre Hashes.
 
 ### 6.2 Anmeldewege
 
@@ -155,7 +158,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 |---|---|
 | Passkey | WebAuthn mit Nutzerverifikation (`userVerification: required`). Eine Passkey-Anmeldung gilt als starke Anmeldung. |
 | Passwort plus TOTP | Beides in einem Schritt prüfen; die Antwort verrät nicht, welcher Teil falsch war. TOTP nach RFC 6238 mit 30-Sekunden-Schritt und 6 Ziffern [K4], Toleranz ±1 Schritt, ein bereits verwendeter Zeitschritt wird abgelehnt. |
-| Wiederherstellungscode | Ersetzt den zweiten Faktor einmalig; danach wird der Nutzer aufgefordert, einen neuen Faktor einzurichten. |
+| Wiederherstellungscode | Ersetzt einmalig den verlorenen Faktor: bei Passwort plus TOTP das TOTP, bei Konten nur mit Passkey den Passkey. Ergebnis ist keine normale Sitzung, sondern eine eingeschränkte Wiederherstellungssitzung (Abschnitt 6.6). |
 
 **Passwortregeln** (nach NIST SP 800-63B-4 [K6]):
 
@@ -180,13 +183,25 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 - Ein Sitzungstoken hat 256 Bit Zufall, liegt im Cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`). In der Datenbank steht nur sein Hash.
 - **Geräte:** Bei der ersten Anmeldung in einem Browser wird ein Gerät angelegt (mit Namen, z. B. „Christians Pixel“). Sitzungen gehören zu einem Gerät. Der Geräteschlüssel für den Offline-Speicher (GK 3.4.3, E14) gehört ebenfalls zum Gerät.
 - **Laufzeit:** Sitzungen enden nach 30 Tagen ohne Nutzung, spätestens nach 90 Tagen. Danach ist eine neue Anmeldung nötig. (Die PWA bleibt offline nutzbar, solange die maximale Offline-Dauer von 30 Tagen nicht abgelaufen ist, E10.)
-- **Starke Anmeldung für heikle Aktionen:** Faktoren ändern, Passwort ändern, Geräte entfernen, Admin-Aktionen und Plugin-Installation verlangen eine starke Anmeldung, die höchstens 10 Minuten alt ist; sonst fragt die Oberfläche erneut nach Passkey oder Passwort plus TOTP.
+- **Starke Anmeldung für heikle Aktionen:** Faktoren ändern, Passwort ändern, Geräte entfernen, Admin-Aktionen und Plugin-Installation verlangen eine starke Anmeldung, die höchstens 10 Minuten alt ist; sonst fragt die Oberfläche erneut nach Passkey oder Passwort plus TOTP. Einzige Ausnahme ist die Wiederherstellungssitzung (Abschnitt 6.6): Sie erlaubt ohne den verlorenen Faktor genau das Einrichten eines Ersatzfaktors, sonst nichts.
 - **Fernabmeldung:** Jeder Nutzer sieht seine Geräte und Sitzungen und kann sie einzeln oder alle beenden. Ein entferntes Gerät verliert sofort seinen Geräteschlüssel auf dem Server (GK 3.4.3, Schritt 7). Admins können das für alle Konten.
 
 ### 6.5 Schutz gegen gefälschte Anfragen (CSRF)
 
 - `SameSite=Lax` allein reicht nach OWASP nicht als einzige Maßnahme [K8]. Zusätzlich prüft der Kern bei jeder ändernden Anfrage (`POST`, `PUT`, `PATCH`, `DELETE`) den Header `Sec-Fetch-Site` und lehnt alles außer `same-origin` ab. Fehlt der Header, wird ersatzweise `Origin` geprüft; fehlt auch dieser oder ist er `null`, wird die Anfrage abgelehnt [K8].
 - Die API nimmt nur `Content-Type: application/json` an.
+
+### 6.6 Kontowiederherstellung
+
+Ziel: Wer einen Faktor verliert, kommt wieder in sein Konto, ohne dass ein einzelner Wiederherstellungscode mehr Macht hat als nötig.
+
+- **Wiederherstellungssitzung:** Ein gültiger Wiederherstellungscode (bei Passwort plus TOTP zusammen mit dem Passwort, bei Konten nur mit Passkey allein) erzeugt eine eigene Sitzungsart. Sie gilt höchstens 10 Minuten, wird nicht verlängert und erlaubt nur: einen neuen Passkey oder ein neues TOTP (bzw. Passwort plus TOTP) einrichten, den verlorenen Faktor entfernen, eigene Geräte und Sitzungen ansehen und beenden. Alle übrigen Endpunkte lehnen sie ab, auch das Lesen von Daten. Nach dem Einrichten des Ersatzfaktors endet sie; der Nutzer meldet sich mit dem neuen Faktor normal an.
+- **Drosselung:** Wiederherstellungscodes zählen wie Passwortversuche (Abschnitt 6.3, je Konto und je IP-Präfix). Ein Code hat 10 Zeichen aus 32 möglichen, also 32¹⁰ = 2⁵⁰ Möglichkeiten (50 Bit); zusammen mit der Drosselung ist Erraten aussichtslos.
+- **Benachrichtigung:** Jede Nutzung eines Codes und jeder in der Wiederherstellungssitzung eingerichtete Faktor wird ins Audit-Log geschrieben und per Push und Mail an den Nutzer und die Admins gemeldet. So fällt ein gestohlener Code sofort auf.
+- **Restbestand:** Nach der Nutzung zeigt die App, wie viele Codes übrig sind, und bietet an, einen neuen Satz zu erzeugen (der alte wird dann ungültig). Das erfordert eine normale starke Anmeldung.
+- **Hilfe durch einen Admin:** Hat jemand weder Faktor noch Code (oder das Passwort vergessen), stellt ein Admin nach eigener starker Anmeldung einen Wiederherstellungslink aus: einmalig, 24 Stunden gültig, nur der Hash wird gespeichert, Übergabe persönlich oder über einen vertrauenswürdigen Weg. Der Link öffnet ebenfalls nur eine Wiederherstellungssitzung. Für den letzten verbliebenen Admin geht das per Kommandozeile auf dem Server.
+- **Empfehlung in der Oberfläche:** Konten nur mit Passkey werden gebeten, mindestens zwei Passkeys auf verschiedenen Geräten anzulegen.
+- **Offline-Daten:** Ein neues Passwort wird für den Offline-Speicher wie eine normale Passwortänderung behandelt (Neuverpacken über den Geräteschlüssel, GK 3.4.3).
 
 ---
 
@@ -306,21 +321,23 @@ Umsetzung von GK 3.5.
 | Endpunkt | Zweck |
 |---|---|
 | `GET /api/v1/sync/changes?since=<rev>&types=...` | Alle für den Nutzer sichtbaren Änderungen seit Revision `rev`, seitenweise. Enthält auch Objekte, die er neu sehen darf, und Hinweise auf Objekte, die er nicht mehr sehen darf (damit das Gerät sie löscht). Dafür erzeugen auch Änderungen an Freigaben eine Revision. |
-| `POST /api/v1/sync/push` | Liste von Änderungen: Änderungs-ID (UUID vom Gerät), Objekt-ID, Typ, Basisrevision, Operation (`create`, `update` mit geänderten Feldern, `delete`, oder plugin-eigene Operation). Antwort je Änderung: `applied`, `merged`, `conflict` oder `rejected` (Rechte oder Validierung), jeweils mit neuem Serverstand. |
+| `POST /api/v1/sync/push` | Liste von Änderungen: Änderungs-ID (UUID vom Gerät), Objekt-ID, Typ, Basisrevision, Operation (`create`, `update` mit geänderten Feldern, `delete`, oder plugin-eigene Operation). Antwort je Änderung: `applied`, `merged`, `conflict` oder `rejected` (Rechte oder Validierung). Den aktuellen Serverstand des Objekts enthält die Antwort nur, wenn der Nutzer das Objekt **im Moment der Antwort** lesen darf; sonst nur Ergebnis und Grund, und das Gerät löscht seine Kopie. |
 | `GET /api/v1/sync/conflicts`, `POST .../resolve` | Konflikteinträge anzeigen und auflösen |
 | `GET /api/v1/events` | Live-Aktualisierung per Server-Sent Events, solange die App offen ist. EventSource ist in allen gängigen Browsern verfügbar [K9]; über HTTP/2 entfällt die Grenze von 6 Verbindungen je Domain [K9]. Die Ereignisse enthalten nur „es gibt Neues ab Revision X“, die Daten holt der Client über `changes`. |
 
 ### 9.2 Regeln
 
-- **Idempotenz:** Eine Änderungs-ID wird nur einmal angewendet; ein erneutes Senden liefert dasselbe Ergebnis.
-- **Revisionen:** Eine globale, fortlaufende Revision (PostgreSQL-Sequenz) für alle Änderungen. Jede Änderung läuft in einer Transaktion: Rechte prüfen, zusammenführen, prüfen, speichern, Revision vergeben.
+- **Idempotenz:** Eine Änderungs-ID wird nur einmal angewendet; ein erneutes Senden liefert dasselbe Ergebnis (`applied`, `merged`, `conflict` oder `rejected` mit Revision). Gespeichert wird nur dieses Ergebnis, nicht der Objektinhalt. Den Serverstand für die Antwort liest der Server jedes Mal neu und prüft dabei erneut das Leserecht, damit eine inzwischen entzogene Freigabe nicht über eine Wiederholung umgangen wird.
+- **Revisionen:** Eine globale, fortlaufende Revision für alle Änderungen (auch an Freigaben). Jede Änderung läuft in einer eigenen Transaktion: Objekt sperren (`SELECT … FOR UPDATE`), Rechte prüfen, zusammenführen, prüfen, Revision vergeben, speichern, abschließen.
+  - **Keine PostgreSQL-Sequenz:** `nextval` wird laut Dokumentation nie zurückgerollt, die Nummer ist also sofort beim Aufruf vergeben und nicht erst beim Abschluss der Transaktion [K13]. Daraus folgt (eigene Schlussfolgerung, die Dokumentation nennt die Commit-Reihenfolge nicht ausdrücklich): Zwei parallele Transaktionen können Revision 101 und 102 bekommen und in umgekehrter Reihenfolge abschließen. Ein Gerät, das nach dem Abschluss von 102 schon `since=102` abfragt, würde 101 nie erhalten. Der Umsetzungsschritt enthält einen Test, der genau diesen Fall mit zwei Verbindungen nachstellt.
+  - **Stattdessen:** Die Revision kommt aus einer Zähler-Tabelle mit genau einer Zeile (`UPDATE core.sync_revision SET rev = rev + 1 RETURNING rev`). Die Zeilensperre hält bis zum Ende der Transaktion; eine zweite schreibende Transaktion wartet bis zum Commit der ersten und wendet ihr UPDATE dann auf den neuen Stand der Zeile an (Read Committed [K14]). Damit werden Revisionen in derselben Reihenfolge sichtbar, in der sie vergeben werden, und ohne Lücken. Der Zähler wird als letzter Schritt vor dem Speichern genommen, damit die Sperre nur kurz gehalten wird. Für die Schreiblast einer Familie ist diese Serialisierung unkritisch; ein Lasttest in der Umsetzung prüft das.
 - **Zusammenführen:** Drei-Wege-Abgleich auf Feldebene (Basis, Server, Client). Plugins melden für jeden Objekttyp an:
   - **Konflikteinheiten:** Felder, die nur gemeinsam übernommen werden (GK 3.5).
   - **Prüfregel:** Funktion, die ein Ergebnis auf Gültigkeit prüft. Schlägt sie fehl, wird die Änderung zum Konflikt.
   - **Operationen** (optional): eigene, gut zusammenführbare Operationen, z. B. „Artikel abhaken“.
 - **Konflikt:** Serverstand bleibt, die Client-Änderung wird als Konflikteintrag gespeichert, der Nutzer sieht ihn in der App (GK 3.5).
 - **Ändern gegen Löschen:** Wurde ein Objekt auf dem Server gelöscht und auf einem Gerät geändert, wird die Änderung zum Konflikteintrag („gelöscht von …, deine Änderung wiederherstellen?“). Wurde es auf dem Gerät gelöscht und auf dem Server geändert, ebenfalls Konflikt („geändert von …, trotzdem löschen?“).
-- **Basis aufbewahren:** Das Gerät speichert für jedes Objekt den zuletzt bestätigten Serverstand als Basis. Der Server bewahrt alte Revisionen eines Objekts so lange auf, wie Konflikte darauf verweisen.
+- **Basis aufbewahren:** Das Gerät speichert für jedes Objekt den zuletzt bestätigten Serverstand als Basis. Der Server legt bei jeder Änderung den bisherigen Stand in `sync_object_versions` ab und bewahrt ihn so lange auf wie Grabsteine (maximale Offline-Dauer plus Puffer, Vorschlag 60 Tage), und darüber hinaus, solange ein offener Konflikt darauf verweist. So findet der Drei-Wege-Abgleich auch nach 30 Tagen offline noch die Basis. Ist die Basis trotzdem nicht mehr vorhanden, wird die Änderung nicht geraten zusammengeführt, sondern zum Konflikteintrag. Alte Stände werden wie die aktuellen gesichert und beim endgültigen Löschen eines Objekts mit entfernt.
 
 ### 9.3 Tests
 
@@ -482,3 +499,6 @@ Alle abgerufen am 2026-11-08. Verweise „GK Qn“ beziehen sich auf die Quellen
 - [K10] RFC 1918, Address Allocation for Private Internets. https://www.rfc-editor.org/rfc/rfc1918
 - [K11] RFC 4193, Unique Local IPv6 Unicast Addresses. https://www.rfc-editor.org/rfc/rfc4193
 - [K12] RFC 8030, Generic Event Delivery Using HTTP Push. https://www.rfc-editor.org/rfc/rfc8030
+- [K13] PostgreSQL 18, CREATE SEQUENCE, Notes („Because nextval and setval calls are never rolled back …“) und Sequence Manipulation Functions (keine lückenlosen Folgen). https://www.postgresql.org/docs/current/sql-createsequence.html, https://www.postgresql.org/docs/current/functions-sequence.html
+- [K14] PostgreSQL 18, Transaction Isolation, 13.2.1 Read Committed („the would-be updater will wait for the first updating transaction to commit or roll back … apply its operation to the updated version of the row“). https://www.postgresql.org/docs/current/transaction-iso.html
+- [K15] Douglas Crockford, Base 32 (10 Ziffern und 22 Buchstaben, ohne I, L, O, U). https://www.crockford.com/base32.html
