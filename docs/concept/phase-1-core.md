@@ -88,7 +88,7 @@ Freigegeben sind etablierte Bibliotheken für Krypto, Datenbank, Web-Framework u
 
 ### 3.3 CI (GitHub Actions)
 
-Bei jedem Pull Request: Lint, Formatprüfung, Typprüfung, Unit-Tests, Integrationstests gegen PostgreSQL (Service-Container), Ende-zu-Ende-Tests mit Playwright (Chromium und WebKit), Prüfung auf vollständige Übersetzungen, `npm audit`. Die Pipeline wird sparsam gehalten (Cache für Abhängigkeiten, Ende-zu-Ende-Tests nur bei Änderungen an `web`, `core` oder Plugins), weil das kostenlose Kontingent an Actions-Minuten für private Repos begrenzt ist (GK 10).
+Bei jedem Pull Request: Lint, Formatprüfung, Typprüfung, Unit-Tests, Integrationstests gegen PostgreSQL (Service-Container), Ende-zu-Ende-Tests mit Playwright (Chromium und WebKit), Prüfung auf vollständige Übersetzungen, `npm audit`. Die Pipeline wird sparsam gehalten (Cache für Abhängigkeiten, Ende-zu-Ende-Tests nur bei Änderungen an `web`, `core`, `packages` (gemeinsame Schemas, Sync-Protokoll, Plugin-SDK) oder Plugins sowie an der CI-Konfiguration selbst), weil das kostenlose Kontingent an Actions-Minuten für private Repos begrenzt ist (GK 10).
 
 ---
 
@@ -140,7 +140,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 
 **Plugin-Daten:** Jedes Plugin bekommt ein eigenes Schema `plugin_<id>` und eine eigene Datenbankrolle (GK 3.3). Objekte, die synchronisiert werden, liegen nicht im Plugin-Schema, sondern in `core.sync_objects` und gehören dem Plugin; der Zugriff läuft nur über die Sync-Schnittstelle des Kerns. So gilt die Konfliktlogik für alle Plugins gleich. Plugins dürfen im eigenen Schema zusätzliche Tabellen anlegen (z. B. Indizes oder nicht synchronisierte Daten).
 
-**Löschen:** Synchronisierte Objekte werden zuerst als Grabstein markiert, damit Offline-Geräte vom Löschen erfahren. Grabsteine werden nach der maximalen Offline-Dauer plus Puffer endgültig entfernt (Vorschlag: 60 Tage). Ein Gerät, das länger offline war, muss sich vollständig neu synchronisieren.
+**Löschen:** Synchronisierte Objekte werden zuerst als Grabstein markiert, damit Offline-Geräte vom Löschen erfahren. Grabsteine werden nach der maximalen Offline-Dauer plus Puffer endgültig entfernt (Vorschlag: 60 Tage), **außer solange ein offener Konflikt auf das Objekt verweist**; dann bleiben Grabstein und benötigte frühere Stände bis zur Auflösung des Konflikts erhalten. Ein Gerät, das länger offline war, muss sich vollständig neu synchronisieren.
 
 ---
 
@@ -166,7 +166,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 - Keine Vorgaben zu Zeichenarten (NIST schließt solche Regeln aus [K6]); stattdessen Abgleich mit einer mitgelieferten Liste häufiger und geleakter Passwörter.
 - Lange Passphrasen sind erlaubt (bis 256 Zeichen); Einfügen aus Passwortmanagern ist erlaubt.
 
-**Passwort-Hash auf dem Server:** Argon2id mit m = 64 MiB, t = 3, p = 4, 128-Bit-Salt (zweite Empfehlung aus RFC 9106 [GK Q4]). Das liegt über der Mindestempfehlung von OWASP (19 MiB, t = 2, p = 1 [K7]). Weil jede Prüfung 64 MiB Speicher braucht, laufen höchstens 4 Prüfungen gleichzeitig; weitere warten in einer Warteschlange. So kann eine Flut von Anmeldeversuchen den Server nicht durch Speichermangel lahmlegen. Die Parameter werden mit dem Hash gespeichert, damit sie später erhöht werden können (Neuberechnung bei der nächsten erfolgreichen Anmeldung).
+**Passwort-Hash auf dem Server:** Argon2id mit m = 64 MiB, t = 3, p = 4, 128-Bit-Salt (zweite Empfehlung aus RFC 9106 [GK Q4]). Das liegt über der Mindestempfehlung von OWASP (19 MiB, t = 2, p = 1 [K7]). Weil jede Prüfung 64 MiB Speicher braucht, laufen höchstens 4 Prüfungen gleichzeitig (zusammen 256 MiB). Weitere Anfragen warten in einer **begrenzten** Warteschlange: höchstens 32 Plätze für alle Nutzer zusammen und höchstens 5 Sekunden Wartezeit. Ist die Warteschlange voll oder die Wartezeit um, antwortet der Server sofort mit `503 Service Unavailable` und `Retry-After`, ohne das Passwort zu prüfen; das zählt nicht als Fehlversuch. Die Drosselung (6.3) und die Ratenbegrenzung (11.4) werden vor dem Einreihen geprüft, damit gedrosselte Versuche keinen Platz belegen. Ein wartender Eintrag hält nur die Anfrage selbst (höchstens 1 MiB nach 11.4, praktisch wenige KiB), so bleibt der Speicherbedarf auch bei einer verteilten Flut begrenzt. Passkey-Anmeldungen brauchen kein Argon2 und laufen an der Warteschlange vorbei. Die Grenzwerte sind Startwerte und werden mit einem Lasttest auf der Zielhardware überprüft. Die Parameter werden mit dem Hash gespeichert, damit sie später erhöht werden können (Neuberechnung bei der nächsten erfolgreichen Anmeldung).
 
 ### 6.3 Drosselung bei Fehlversuchen (E9)
 
@@ -269,7 +269,8 @@ SIGNATURE          Ed25519-Signatur über FILES.sha256, plus ID des Signaturschl
 2. Der Kern prüft: Signatur gültig und Schlüssel aktiv, jede Datei passt zu `FILES.sha256`, keine zusätzlichen Dateien, nur normale Dateien und Verzeichnisse (keine symbolischen oder harten Links, keine Gerätedateien), Pfade ohne `..` und ohne absolute Pfade, Größenlimit beim Entpacken, `coreApi` passt zur Kernversion.
 3. Der Admin sieht die verlangten Rechte und bestätigt sie.
 4. Der Kern legt Schema und Datenbankrolle an, führt die Migrationen in einer Transaktion aus und aktiviert das Plugin.
-5. **Bei jedem Start** prüft der Kern die Hashes aller installierten Plugin-Dateien erneut. Stimmt etwas nicht, wird das Plugin nicht geladen, und ein Alarm geht raus.
+5. **Bei jedem Start** wiederholt der Kern vor dem Laden jedes Plugins die vollständige Prüfung aus Schritt 2, soweit sie die installierten Dateien betrifft: Die Ed25519-Signatur über `FILES.sha256` muss gültig sein, der Signaturschlüssel muss in `signing_keys` noch aktiv sein und die ID aus `plugins` tragen, jede Datei muss zu ihrem Hash passen, und es dürfen keine zusätzlichen Dateien oder Links vorhanden sein. Ein reiner Hash-Vergleich würde nicht reichen, weil ein Angreifer mit Schreibzugriff sonst eine Datei und ihren Eintrag in `FILES.sha256` gemeinsam austauschen könnte. Schlägt etwas fehl, wird das Plugin nicht geladen, und ein Alarm geht raus.
+6. **Schlüssel zurückziehen:** Wird ein Signaturschlüssel im laufenden Betrieb zurückgezogen, deaktiviert der Kern sofort alle damit signierten Plugins (ohne ihre Daten zu löschen) und meldet das den Admins.
 
 **Signierwerkzeug** (`/tools/signer`): läuft auf Christians Rechner, baut das Plugin aus einem sauberen Git-Stand (ohne lokale Änderungen), schreibt `FILES.sha256` und signiert mit dem privaten Ed25519-Schlüssel. Der private Schlüssel liegt verschlüsselt (Passphrase) auf dem Rechner und zusätzlich offline gesichert (GK 3.3). Schlüsselwechsel: Ein neuer öffentlicher Schlüssel wird im Admin-Bereich hinzugefügt; der alte kann zurückgezogen werden, danach laden mit ihm signierte Pakete nicht mehr.
 
@@ -337,7 +338,7 @@ Umsetzung von GK 3.5.
   - **Operationen** (optional): eigene, gut zusammenführbare Operationen, z. B. „Artikel abhaken“.
 - **Konflikt:** Serverstand bleibt, die Client-Änderung wird als Konflikteintrag gespeichert, der Nutzer sieht ihn in der App (GK 3.5).
 - **Ändern gegen Löschen:** Wurde ein Objekt auf dem Server gelöscht und auf einem Gerät geändert, wird die Änderung zum Konflikteintrag („gelöscht von …, deine Änderung wiederherstellen?“). Wurde es auf dem Gerät gelöscht und auf dem Server geändert, ebenfalls Konflikt („geändert von …, trotzdem löschen?“).
-- **Basis aufbewahren:** Das Gerät speichert für jedes Objekt den zuletzt bestätigten Serverstand als Basis. Der Server legt bei jeder Änderung den bisherigen Stand in `sync_object_versions` ab und bewahrt ihn so lange auf wie Grabsteine (maximale Offline-Dauer plus Puffer, Vorschlag 60 Tage), und darüber hinaus, solange ein offener Konflikt darauf verweist. So findet der Drei-Wege-Abgleich auch nach 30 Tagen offline noch die Basis. Ist die Basis trotzdem nicht mehr vorhanden, wird die Änderung nicht geraten zusammengeführt, sondern zum Konflikteintrag. Alte Stände werden wie die aktuellen gesichert und beim endgültigen Löschen eines Objekts mit entfernt.
+- **Basis aufbewahren:** Das Gerät speichert für jedes Objekt den zuletzt bestätigten Serverstand als Basis. Der Server legt bei jeder Änderung den bisherigen Stand in `sync_object_versions` ab und bewahrt ihn so lange auf wie Grabsteine (maximale Offline-Dauer plus Puffer, Vorschlag 60 Tage), und darüber hinaus, solange ein offener Konflikt darauf verweist. So findet der Drei-Wege-Abgleich auch nach 30 Tagen offline noch die Basis. Ist die Basis trotzdem nicht mehr vorhanden, wird die Änderung nicht geraten zusammengeführt, sondern zum Konflikteintrag. Alte Stände werden wie die aktuellen gesichert. Beim endgültigen Löschen eines Objekts werden sie mit entfernt; dieses Löschen wartet aber wie beim Grabstein (Abschnitt 5), bis kein offener Konflikt mehr auf das Objekt verweist.
 
 ### 9.3 Tests
 
@@ -383,7 +384,7 @@ Umsetzung von GK 3.6: Übersetzungsdateien je Sprache und Plugin (`de.json`, `en
 ### 11.3 Schlüssel und Feldverschlüsselung
 
 - **Schlüsseldateien** außerhalb der Datenbank, nur für den Dienstnutzer lesbar: Feldverschlüsselungs-Hauptschlüssel, VAPID-Privatschlüssel, HMAC-Schlüssel für Tokens. Sie werden getrennt von der Datenbank gesichert (GK 3.4.4); das genaue Verfahren gehört zu Phase 4.
-- **Feldverschlüsselung** für sensible Felder (in Phase 1: TOTP-Geheimnisse, Geräteschlüssel, Plugin-Felder, die ein Plugin als sensibel markiert): AES-256-GCM, zufälliger IV, Schlüssel-ID im Chiffretext, damit der Schlüssel später gewechselt werden kann. Die Objekt-ID wird als zusätzliche authentisierte Daten (AAD) eingebunden, damit verschlüsselte Werte nicht unbemerkt zwischen Datensätzen vertauscht werden können.
+- **Feldverschlüsselung** für sensible Felder (in Phase 1: TOTP-Geheimnisse, Geräteschlüssel, Plugin-Felder, die ein Plugin als sensibel markiert): AES-256-GCM, zufälliger IV, Schlüssel-ID im Chiffretext, damit der Schlüssel später gewechselt werden kann. Als zusätzliche authentisierte Daten (AAD) wird der vollständige Ort des Werts eingebunden: Datenbereich (z. B. `core.totp_credentials` oder Plugin-ID und Objekttyp), Objekt- bzw. Datensatz-ID und Feldpfad, eindeutig kodiert (z. B. als JSON-Array). Beim Entschlüsseln baut der Kern die AAD aus dem Ort auf, an dem er den Wert erwartet, nicht aus Angaben im Chiffretext. So schlägt die GCM-Prüfung fehl, wenn verschlüsselte Werte zwischen Datensätzen **oder zwischen Feldern desselben Datensatzes** vertauscht werden. Frühere Stände in `sync_object_versions` verwenden dieselbe AAD wie der aktuelle Stand, weil ein Stand beim Ablegen nicht neu verschlüsselt wird; das Vertauschen mit einem älteren Stand desselben Felds verhindert die AAD nicht, ist aber nur mit Schreibzugriff auf die Datenbank möglich.
 
 ### 11.4 Schutz der Schnittstelle
 
