@@ -24,7 +24,7 @@ Dieses Dokument beschreibt das Gesamtbild über alle Phasen. Es legt Architektur
 | Form | Responsive Webanwendung als PWA (Progressive Web App). |
 | Nutzer | Familienmitglieder mit Rechtesystem. Endgeräte: Android (Christian) und iOS (seine Freundin). |
 | Zugriff von außen | Öffentlich per HTTPS, kein VPN. |
-| Offline | Alle Plugins offline lesen **und** bearbeiten. Offline-Daten immer verschlüsselt, nur nach Anmeldung sichtbar, beim Abmelden gelöscht. |
+| Offline | Alle Plugins offline lesen **und** bearbeiten. Offline-Daten im Speicher der PWA immer verschlüsselt, nur nach Anmeldung sichtbar, beim Abmelden gelöscht. Für Kalenderdaten, die über CalDAV oder die spätere Android-App im Kalender des Betriebssystems liegen, gilt eine Ausnahme (siehe 3.8, Entscheidung E12). |
 | Vorgehen | Funktionen zuerst schlank bauen und testen, dann ausbauen. |
 | Sprache | Kompletter Programmcode auf Englisch. Oberfläche mehrsprachig, zum Start Deutsch und Englisch. |
 | Arbeitsweise | Je Phase: Konzept → Review bis problemfrei → Umsetzung → Review bis problemfrei → nächste Phase. Copilot Code Review auf jedem Pull Request, wiederholt bis Copilot nichts mehr findet. |
@@ -144,7 +144,7 @@ Einkaufslisten und Kalender werden selbst als Plugins gebaut. So wird das Plugin
 | Angreifer / Risiko | Maßnahmen |
 |---|---|
 | Angreifer aus dem Internet | Nur Port 443 offen (Port 80 höchstens für die Zertifikatsprüfung, siehe 8), Passkeys oder Passwort plus TOTP, gedrosselte Anmeldeversuche, Admin-Bereich nur aus dem Heimnetz, automatische Sicherheitsupdates, minimale Angriffsfläche, Logging mit Alarm. |
-| Gestohlenes oder verlorenes Handy | Offline-Daten verschlüsselt, Sitzungen aus der Ferne beendbar, gerätebezogene App-Passwörter für CalDAV einzeln widerrufbar. |
+| Gestohlenes oder verlorenes Handy | Offline-Daten der PWA verschlüsselt, Sitzungen aus der Ferne beendbar, Geräteschlüssel auf dem Server löschbar, gerätebezogene App-Passwörter für CalDAV einzeln widerrufbar. Kalenderkopien im Betriebssystem schützt nur die Gerätesperre (3.8, E12). |
 | Fehler in eigenem Code | Automatische Tests, Reviews (eigenes und Copilot), Rechte-Manifest, getrennte Datenbankrollen. |
 | Kompromittierte Bibliothek (Lieferkette) | Wenige Abhängigkeiten, Lockfile mit festen Versionen, automatische Hinweise auf bekannte Schwachstellen, Updates nur per Pull Request mit Review. |
 | Untergeschobenes Plugin oder Update | Nur signierte Pakete, Schlüssel nicht auf dem Server. |
@@ -163,16 +163,18 @@ Einkaufslisten und Kalender werden selbst als Plugins gebaut. So wird das Plugin
 - **App-Passwörter für CalDAV:** iOS-Kalender und DAVx⁵ können keine Passkeys. Für sie erzeugt der Nutzer pro Gerät ein zufälliges App-Passwort, das nur für CalDAV gilt und einzeln widerrufen werden kann. Apple nutzt für iCloud dasselbe Prinzip [Q5].
 - **Admin-Bereich nur aus dem Heimnetz:** Prüfung der Quelladresse auf dem Server. Im Kern-Konzept ist festzulegen, wie das mit Reverse Proxy, IPv6 und weitergeleiteten Headern fälschungssicher gelöst wird (der Header `X-Forwarded-For` darf nur vom eigenen Proxy übernommen werden).
 
-#### 3.4.3 Offline-Verschlüsselung (beschlossenes Verfahren)
+#### 3.4.3 Offline-Verschlüsselung (beschlossenes Verfahren, ergänzt um einen Geräteschlüssel, Entscheidung E14)
 
 1. Beim ersten Login auf einem Gerät erzeugt die PWA einen zufälligen **Datenschlüssel** (AES-256-GCM).
 2. Aus dem Passwort und einem zufälligen Salt wird per **Argon2id** ein Schlüssel abgeleitet, der den Datenschlüssel verschlüsselt („wrappt“). Gespeichert werden nur Salt, Parameter und der gewrappte Datenschlüssel, **kein Passwort-Hash**.
+   Zusätzlich wird der Datenschlüssel ein zweites Mal gewrappt, mit einem zufälligen **Geräteschlüssel**, den nur der Server speichert (je Gerät einer). Auf dem Gerät liegt nur diese zweite gewrappte Kopie, nicht der Geräteschlüssel selbst. Der Server gibt den Geräteschlüssel nur nach einer erfolgreichen Online-Anmeldung dieses Geräts heraus (Passwort plus TOTP oder Passkey). Das verschlechtert den Schutz nicht, weil der Server alle synchronisierten Daten ohnehin besitzt; es ermöglicht aber die Schritte 6 und 7.
 3. Offline-Anmeldung: Das eingegebene Passwort wird erneut abgeleitet. Nur wenn das Entschlüsseln des Datenschlüssels gelingt (der GCM-Authentisierungs-Tag passt), ist das Passwort richtig.
 4. Alle Offline-Daten (IndexedDB) sind mit dem Datenschlüssel verschlüsselt. Der entschlüsselte Schlüssel liegt nur im Arbeitsspeicher, als nicht exportierbarer Web-Crypto-Schlüssel.
 5. Beim Abmelden werden alle Offline-Daten und Schlüssel gelöscht. Gibt es noch nicht synchronisierte Änderungen, warnt die PWA vorher.
-6. Ändert der Nutzer sein Passwort, wird der Datenschlüssel auf jedem Gerät bei der nächsten Online-Anmeldung neu gewrappt; das alte Passwort entsperrt danach nichts mehr.
+6. **Passwort geändert oder zurückgesetzt:** Ein anderes Gerät kennt das neue Passwort nicht und kann den Datenschlüssel damit nicht entsperren. Bei der nächsten Online-Anmeldung auf diesem Gerät (mit dem neuen Passwort oder einem Passkey) holt die PWA den Geräteschlüssel vom Server, entsperrt damit den Datenschlüssel und wrappt ihn neu mit dem neuen Passwort. Das alte Passwort ist dafür nicht nötig, und der verschlüsselte Offline-Speicher samt nicht synchronisierter Änderungen bleibt erhalten. Bis zu dieser Online-Anmeldung entsperrt auf dem Gerät weiterhin nur das alte Passwort; die Oberfläche weist darauf hin.
+7. **Gerät gesperrt oder entfernt:** Der Server löscht den Geräteschlüssel. Ist das Gerät offline, bleiben die Daten dort nur noch mit dem alten Passwort entsperrbar, bis das Gerät wieder Kontakt hat und seine Daten löscht, oder bis die maximale Offline-Dauer abläuft (siehe unten).
 
-**Fernabmeldung und Offline-Geräte:** Eine aus der Ferne beendete Sitzung kann ein Gerät, das gerade offline ist, nicht sofort löschen. Das Gerät löscht seine Daten, sobald es wieder Kontakt zum Server hat. Zusätzlich gilt eine maximale Offline-Dauer (Vorschlag: 30 Tage, Entscheidung E10), nach der die PWA erst nach einer Online-Anmeldung wieder entsperrt.
+**Fernabmeldung und Offline-Geräte:** Eine aus der Ferne beendete Sitzung kann ein Gerät, das gerade offline ist, nicht sofort löschen. Das Gerät löscht seine Daten, sobald es wieder Kontakt zum Server hat. Zusätzlich gilt eine maximale Offline-Dauer (Vorschlag: 30 Tage, Entscheidung E10), nach der die PWA erst nach einer Online-Anmeldung wieder entsperrt. Grenze: Diese Frist setzt die PWA selbst durch. Wer die gespeicherten Daten aus dem Browser kopiert und das alte Passwort kennt oder errät, kann sie auch danach entschlüsseln; die Frist schützt also vor normaler Nutzung, nicht vor einem gezielten Angriff mit kopierten Daten.
 
 **Passwort nötig für Offline-Zugriff:** Weil der Schlüssel aus dem Passwort abgeleitet wird, braucht jedes Konto mit Offline-Zugriff ein Passwort, auch wenn online meist der Passkey genutzt wird.
 
@@ -196,7 +198,7 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 - Clients merken sich den Stand, auf dem eine Änderung beruht (Basis), und senden die Änderung mit dieser Revision und einer eindeutigen Änderungs-ID, damit ein wiederholtes Senden nichts doppelt ausführt.
 - **Konfliktlösung im Kern:** Hat sich das Objekt seitdem geändert, führt der Server einen Drei-Wege-Abgleich auf Feldebene durch (Basis, Server, Client). Wurden verschiedene Felder geändert, werden beide Änderungen übernommen. Wurde dasselbe Feld geändert, bleibt der Serverstand gültig, und die Client-Version wird als **Konfliktkopie** gespeichert, die der Nutzer sieht und auflösen kann. Es geht also nie stillschweigend etwas verloren.
 - Plugins können für eigene Datentypen feinere Regeln festlegen, etwa Einkaufslisten als einzelne Operationen („Artikel hinzufügen“, „abhaken“), die sich fast immer konfliktfrei zusammenführen lassen.
-- **CalDAV-Besonderheit:** CalDAV-Clients senden Änderungen mit `If-Match` und dem bekannten `ETag`. Passt der `ETag` nicht mehr, antwortet der Server nach HTTP-Standard mit `412 Precondition Failed`, und der Client lädt neu [Q23]. Für CalDAV gibt es also keine Konfliktkopie auf dem Server, sondern das im Protokoll vorgesehene Verhalten. Die Regel „Server gewinnt, nichts geht verloren“ bleibt dieselbe.
+- **CalDAV-Besonderheit:** CalDAV-Clients senden Änderungen mit `If-Match` und dem bekannten `ETag`. Passt der `ETag` nicht mehr, antwortet der Server nach HTTP-Standard mit `412 Precondition Failed` [Q23]. Das schützt den Serverstand davor, überschrieben zu werden. Was mit der abgelehnten Änderung des Clients passiert, legt der Standard nicht fest; das entscheidet allein der Client (z. B. erneut versuchen, verwerfen oder dem Nutzer anzeigen). **Für CalDAV gilt die Zusage „nichts geht verloren“ deshalb nur für den Serverstand, nicht für abgelehnte Client-Änderungen.** Wie sich iOS-Kalender und DAVx⁵ bei gleichzeitigen Offline-Änderungen tatsächlich verhalten, wird in Phase 4 gezielt getestet und im Kalender-Konzept dokumentiert; erst danach wird entschieden, ob zusätzliche Maßnahmen nötig sind.
 - **Keine Hintergrund-Synchronisation unter iOS:** Die Background Sync API wird von Safari nicht unterstützt [Q9]. Die PWA synchronisiert daher beim Öffnen, beim Wiederherstellen der Verbindung und periodisch, solange sie offen ist. Nicht synchronisierte Änderungen zeigt die Oberfläche deutlich an.
 
 ### 3.6 Sprache im Code, Mehrsprachigkeit der Oberfläche
@@ -206,7 +208,11 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 - **Sprachen zum Start:** Deutsch und Englisch. Weitere Sprachen lassen sich ohne Codeänderung ergänzen.
 - Jeder Nutzer wählt seine Sprache; Standard ist die Browsersprache. Auch Push-Nachrichten und Mails werden in der Sprache des Empfängers erzeugt.
 - Ein automatischer Test prüft, dass jeder Text in allen Sprachen vorhanden ist.
-- Zeitpunkte (z. B. „erstellt am“) werden in UTC gespeichert. Termine, besonders wiederkehrende und ganztägige, werden wie in iCalendar vorgesehen in lokaler Zeit mit Zeitzonen-ID gespeichert (Standard `Europe/Berlin`) [Q13], damit ein wöchentlicher Termin um 9 Uhr auch nach der Zeitumstellung um 9 Uhr bleibt.
+- Zeitpunkte (z. B. „erstellt am“) werden in UTC gespeichert.
+- Termine folgen den Zeitarten von iCalendar [Q13] und werden verlustfrei so gespeichert, wie sie angelegt wurden:
+  - **Termine mit Uhrzeit an einem Ort** in lokaler Zeit mit Zeitzonen-ID (Standard `Europe/Berlin`), damit ein wöchentlicher Termin um 9 Uhr auch nach der Zeitumstellung um 9 Uhr bleibt.
+  - **Ganztägige Termine** als reines Datum ohne Uhrzeit und ohne Zeitzonen-ID. RFC 5545 verbietet den Parameter `TZID` bei reinen Datumswerten (Abschnitt 3.2.19); als Mitternacht in einer Zeitzone gespeichert würde ein Geburtstag in einer anderen Zeitzone auf den falschen Tag rutschen.
+  - **UTC-Zeiten** und **„schwebende“ Zeiten** (ohne Zeitzone, gelten überall zur selben lokalen Uhrzeit) bleiben als solche erhalten und werden nicht umgerechnet.
 
 ### 3.7 Benachrichtigungen
 
@@ -219,6 +225,10 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 
 - Service Worker liefert die Anwendung offline aus; Daten liegen verschlüsselt in IndexedDB (3.4.3).
 - **Speicherbereinigung bei iOS:** Safari löscht skriptbeschreibbaren Speicher (u. a. IndexedDB und Service-Worker-Registrierungen) nach sieben Tagen Safari-Nutzung ohne Interaktion mit der Seite. Zum Home-Bildschirm hinzugefügte Web-Apps haben laut WebKit einen eigenen Zähler, und WebKit erwartet nicht, dass deren Daten gelöscht werden [Q12]. Daher gilt: Die PWA wird auf iOS immer über den Home-Bildschirm genutzt. Weil der Browser Speicher trotzdem bei Platzmangel freigeben kann, darf der Offline-Speicher nie die einzige Kopie sein; die PWA synchronisiert so früh wie möglich und zeigt ungesicherte Änderungen an.
+- **Ausnahme Kalender im Betriebssystem (Entscheidung E12):** Über CalDAV (iOS-Kalender, DAVx⁵) und später die Android-Sync-App landen Termine im Kalenderspeicher des Betriebssystems. Diese Kopien verschlüsselt nicht die PWA, sie sind für Kalender-Apps auf dem Gerät lesbar, und das Abmelden in der PWA oder das Widerrufen des App-Passworts löscht sie nicht. Die Zusage „verschlüsselt, nur nach Anmeldung sichtbar, beim Abmelden gelöscht“ gilt daher nur für den Speicher der PWA. Vorschlag für diese Ausnahme:
+  - Kalender-Sync aufs Betriebssystem nur auf Geräten mit Bildschirmsperre und eingeschalteter Geräteverschlüsselung.
+  - Sensible Kalender können vom CalDAV-Sync ausgeschlossen werden und sind dann nur in der PWA sichtbar.
+  - Beim Entfernen eines Geräts muss das Konto auf dem Gerät gelöscht werden (in DAVx⁵ bzw. in den iOS-Einstellungen). Ob dabei die lokal gespeicherten Termine zuverlässig mit gelöscht werden, ist nicht verifiziert und wird in Phase 4 auf beiden Systemen geprüft. Die eigene Android-App (Phase 8) löscht ihre Termine beim Entfernen des Kontos und, sobald der Server das Gerät gesperrt hat, beim nächsten Kontakt.
 
 ---
 
@@ -277,8 +287,13 @@ Geplante Repository-Struktur (Namen englisch):
 - **Datenbank** konsistent sichern (Snapshot bzw. `pg_dump`), nicht nur Dateien kopieren.
 - **3-2-1:** drei Kopien, zwei Medien, eine außer Haus (Online-Speicher, verschlüsselt von Anfang an). Wichtig: RAID ist kein Backup. Als zweites lokales Medium wird zusätzlich eine externe Platte gebraucht (Hardware-Liste in Phase 6).
 - **Dauer der ersten Online-Sicherung:** 2 TB bei 50 Mbit/s dauern rechnerisch rund 3,7 Tage Dauer-Upload (2 × 10¹² Byte × 8 / 50 × 10⁶ bit/s ≈ 320 000 s), in der Praxis länger. Danach laufen nur noch Änderungen. Der Upload wird gedrosselt, damit der Anschluss nutzbar bleibt.
-- **Wiederherstellungstests** automatisch (regelmäßig Stichproben) und manuell (vollständige Wiederherstellung auf leerem System, mindestens einmal im Jahr).
-- **Schlüssel** nur bei Christian und ausgedruckt an einem sicheren Ort. Ohne Schlüssel ist das Backup wertlos, deshalb gehört das Wiederherstellen ins Notfallhandbuch. **Zielkonflikt:** Wenn Christian ausfällt, kann seine Freundin ohne Zugang zum ausgedruckten Schlüssel nichts wiederherstellen. Vorschlag: Der Ausdruck liegt versiegelt an einem Ort, den das Notfallhandbuch nennt (Entscheidung E11).
+- **Schlüsselmodell (Entscheidung E13):** Ein Backup, das nachts unbeaufsichtigt läuft, braucht auf dem Server einen Schlüssel zum Verschlüsseln. Damit trotzdem der Entschlüsselungsschlüssel nur bei Christian liegt, wird ein Verfahren mit öffentlichem Schlüssel vorgeschlagen:
+  - Für jeden Backup-Lauf erzeugt der Server zufällige Datenschlüssel und verschlüsselt sie mit dem **öffentlichen Wiederherstellungsschlüssel**. Der zugehörige **private Wiederherstellungsschlüssel** liegt nur bei Christian und ausgedruckt; der Server kann seine eigenen Backups nicht entschlüsseln.
+  - Für die Deduplizierung braucht der Server einen eigenen **Dedup-Schlüssel**, mit dem er Block-Kennungen berechnet (z. B. per HMAC). Er erlaubt kein Entschlüsseln. Wer ihn erbeutet, könnte aber prüfen, ob ein bestimmter, ihm bekannter Inhalt im Backup vorkommt; das ist im Phasenkonzept zu bewerten.
+  - Der Vorteil gegenüber einem einzigen symmetrischen Schlüssel auf dem Server: Wer später den Server übernimmt, kann ältere Backups beim Speicheranbieter nicht entschlüsseln, also auch keine dort noch vorhandenen, auf dem Server längst gelöschten Daten.
+  - Die konkreten Verfahren (z. B. X25519 mit HKDF) aus einer etablierten Krypto-Bibliothek werden im Phasenkonzept festgelegt.
+- **Wiederherstellungstests:** Automatisch prüft der Server regelmäßig, ohne zu entschlüsseln, ob alle Blöcke beim Speicheranbieter vorhanden und unverändert sind (Prüfsummen über den Chiffretext) und ob die Verzeichnisse vollständig sind. Ein echter Entschlüsselungstest braucht den privaten Schlüssel und läuft deshalb manuell: Christian stellt mindestens vierteljährlich Stichproben und mindestens einmal im Jahr das ganze System auf einem getrennten Rechner wieder her (Vorschlag).
+- **Schlüssel** (privater Wiederherstellungsschlüssel) nur bei Christian und ausgedruckt an einem sicheren Ort. Ohne Schlüssel ist das Backup wertlos, deshalb gehört das Wiederherstellen ins Notfallhandbuch. **Zielkonflikt:** Wenn Christian ausfällt, kann seine Freundin ohne Zugang zum ausgedruckten Schlüssel nichts wiederherstellen. Vorschlag: Der Ausdruck liegt versiegelt an einem Ort, den das Notfallhandbuch nennt (Entscheidung E11).
 - Wahl des Online-Speichers (z. B. S3-kompatibel) im Phasenkonzept.
 
 ## 8. Live-Betrieb und Hardware – Phase 6 (Umriss)
@@ -328,6 +343,9 @@ Geplante Repository-Struktur (Namen englisch):
 | E9 | Fehlversuche bei der Anmeldung | Ansteigende Wartezeit plus Alarm statt harter Sperre |
 | E10 | Maximale Offline-Dauer ohne Online-Anmeldung | 30 Tage |
 | E11 | Zugang zum Backup-Schlüssel im Notfall | Versiegelter Ausdruck an einem im Notfallhandbuch genannten Ort |
+| E12 | Ausnahme für Kalenderdaten im Kalender des Betriebssystems (CalDAV, Android-App) | Zulassen, nur mit Bildschirmsperre und Geräteverschlüsselung, sensible Kalender vom Sync ausschließbar |
+| E13 | Schlüsselmodell der Datensicherung | Öffentlicher Schlüssel auf dem Server, privater Wiederherstellungsschlüssel nur bei Christian; Entschlüsselungstests manuell |
+| E14 | Geräteschlüssel auf dem Server als zweiter Weg zum Offline-Datenschlüssel (für Passwortwechsel und Sperren von Geräten) | Einführen (3.4.3) |
 
 ---
 
