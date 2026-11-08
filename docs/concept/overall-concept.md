@@ -376,4 +376,4 @@ Alle Quellen abgerufen am 2026-11-08.
 - [Q21] GitHub Docs, About Copilot code review. https://docs.github.com/en/copilot/concepts/agents/code-review
 - [Q22] GitHub Changelog, 2026-09-23: Copilot code review: more ways to request and configure reviews. https://github.blog/changelog/2026-09-23-copilot-code-review-more-ways-to-request-and-configure-reviews
 - [Q23] RFC 9110, HTTP Semantics, Abschnitte 13.1.1 (If-Match) und 15.5.13 (412 Precondition Failed), https://www.rfc-editor.org/rfc/rfc9110; zusammengefasst bei MDN: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/412
-- [Q24] W3C, Web Cryptography API, Methode `wrapKey` (der zu wrappende Schlüssel muss exportierbar sein). https://www.w3.org/TR/WebCryptoAPI/
+- [Q24] MDN, SubtleCrypto.wrapKey(): „To export a key, it must have CryptoKey.extractable set to true.“ https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/wrapKey; Spezifikation: W3C Web Cryptography API, https://www.w3.org/TR/WebCryptoAPI/. Zusätzlich geprüft: `wrapKey` auf einem nicht exportierbaren Schlüssel schlägt in der Web-Crypto-Implementierung von Node.js 22 mit „key is not extractable“ fehl.
