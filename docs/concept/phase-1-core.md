@@ -88,7 +88,7 @@ Freigegeben sind etablierte Bibliotheken für Krypto, Datenbank, Web-Framework u
 
 ### 3.3 CI (GitHub Actions)
 
-Bei jedem Pull Request: Lint, Formatprüfung, Typprüfung, Unit-Tests, Integrationstests gegen PostgreSQL (Service-Container), Ende-zu-Ende-Tests mit Playwright (Chromium und WebKit), Prüfung auf vollständige Übersetzungen, `npm audit`. Die Pipeline wird sparsam gehalten (Cache für Abhängigkeiten, Ende-zu-Ende-Tests nur bei Änderungen an `web`, `core`, `packages` (gemeinsame Schemas, Sync-Protokoll, Plugin-SDK) oder Plugins sowie an der CI-Konfiguration selbst), weil das kostenlose Kontingent an Actions-Minuten für private Repos begrenzt ist (GK 10).
+Bei jedem Pull Request: Lint, Formatprüfung, Typprüfung, Unit-Tests, Integrationstests gegen PostgreSQL (Service-Container), Ende-zu-Ende-Tests mit Playwright (Chromium und WebKit), Prüfung auf vollständige Übersetzungen, `npm audit`. Die Pipeline wird sparsam gehalten (Cache für Abhängigkeiten, Ende-zu-Ende-Tests nur bei Änderungen an `web`, `core`, `packages` (gemeinsame Schemas, Sync-Protokoll, Plugin-SDK) oder Plugins sowie an der CI-Konfiguration, den Abhängigkeiten (`package.json`, `package-lock.json` im Wurzelverzeichnis und in Unterprojekten) und gemeinsamen Build-Einstellungen (`tsconfig`, Vite-Konfiguration); Dependabot-Updates lösen damit immer auch Ende-zu-Ende-Tests aus), weil das kostenlose Kontingent an Actions-Minuten für private Repos begrenzt ist (GK 10).
 
 ---
 
@@ -185,6 +185,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
   - **Tests:** parallele Anmeldeversuche, parallele richtige und falsche Versuche am selben Konto, viele erfolgreiche Anmeldungen hintereinander vom selben IP-Präfix, ein paralleler Schwall von Versuchen direkt nach Ablauf der maximalen Wartezeit, Abweisung wegen voller Warteschlange und Absturz während eines laufenden Versuchs.
 - Rechnerisch sind so in der ersten Stunde knapp 20 Versuche möglich, danach höchstens einer pro Stunde. 100 aufeinanderfolgende Fehlversuche, die von NIST genannte Obergrenze [K6], würden damit mehr als drei Tage dauern.
 - **Kein Aussperren durch Angreifer:** Die Wartezeit des Kontozählers gilt nur für die Anmeldung mit Passwort. Mit einem Passkey kann sich der Nutzer jederzeit anmelden, auch wenn ein Angreifer gerade sein Passwort durchprobiert; das ist der Grund für E9.
+- **Bekannte Geräte (Device Cookies nach OWASP [K17]):** Nach jeder erfolgreichen Passwort-Anmeldung bekommt der Browser ein Geräte-Cookie (`__Host-device`, `Secure`, `HttpOnly`) mit Kontokennung, Zufallswert und HMAC-Signatur, das bei jeder Anmeldung erneuert wird. Versuche mit gültigem Geräte-Cookie für dieses Konto werden **je Cookie** gedrosselt, nicht über den Kontozähler. Der Kontozähler gilt nur für Versuche ohne gültiges Geräte-Cookie. Ein Angreifer, der das Passwort von außen durchprobiert, bremst damit nur unbekannte Geräte; der Nutzer kann sich auf seinen bekannten Geräten weiter anmelden, auch ohne Passkey. Für unbekannte Geräte bleibt der Passkey der Weg ohne Wartezeit (E9). Ein Test simuliert einen Angriff auf ein Konto und prüft, dass ein bekanntes Gerät sich weiter anmelden kann.
 - Ab 10 Fehlversuchen in Folge geht ein Alarm an die Admins (Push und Mail), ab 20 zusätzlich an den betroffenen Nutzer.
 - Passkey-Anmeldungen sind nicht erratbar und werden nicht gedrosselt, wohl aber in der Zahl der Anfragen je IP begrenzt (allgemeine Ratenbegrenzung, Abschnitt 11.4).
 
@@ -205,7 +206,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 
 Ziel: Wer einen Faktor verliert, kommt wieder in sein Konto, ohne dass ein einzelner Wiederherstellungscode mehr Macht hat als nötig.
 
-- **Wiederherstellungssitzung:** Ein gültiger Wiederherstellungscode (bei Passwort plus TOTP zusammen mit dem Passwort, bei Konten nur mit Passkey allein) erzeugt eine eigene Sitzungsart. Sie gilt höchstens 10 Minuten, wird nicht verlängert und erlaubt nur: einen neuen Passkey oder ein neues TOTP (bzw. Passwort plus TOTP) einrichten, den verlorenen Faktor entfernen, eigene Geräte und Sitzungen ansehen und beenden. Alle übrigen Endpunkte lehnen sie ab, auch das Lesen von Daten. Nach dem Einrichten des Ersatzfaktors endet sie; der Nutzer meldet sich mit dem neuen Faktor normal an.
+- **Wiederherstellungssitzung:** Ein gültiger Wiederherstellungscode (bei Passwort plus TOTP zusammen mit dem Passwort, bei Konten nur mit Passkey allein) erzeugt eine eigene Sitzungsart. Sie gilt höchstens 10 Minuten, wird nicht verlängert und erlaubt nur: einen **zusätzlichen** Passkey einrichten, das TOTP ersetzen (nur bei Passwort plus TOTP, wo zusätzlich das Passwort nötig war) oder bei Konten nur mit Passkey zusätzlich Passwort plus TOTP einrichten, sowie eigene Geräte und Sitzungen **ansehen**. Bestehende Passkeys entfernen, Sitzungen oder Geräte beenden und neue Wiederherstellungscodes erzeugen geht nur in einer normalen Sitzung mit starker Anmeldung. So kann ein Angreifer mit gestohlenem Code den echten Nutzer nicht aussperren: Dessen Passkeys und Sitzungen bleiben, er wird benachrichtigt (unten) und kann den fremden Faktor in einer normalen Sitzung entfernen. Alle übrigen Endpunkte lehnen sie ab, auch das Lesen von Daten. Nach dem Einrichten des Ersatzfaktors endet sie; der Nutzer meldet sich mit dem neuen Faktor normal an.
 - **Drosselung:** Wiederherstellungscodes zählen wie Passwortversuche (Abschnitt 6.3, je Konto und je IP-Präfix). Ein Code hat 10 Zeichen aus 32 möglichen, also 32¹⁰ = 2⁵⁰ Möglichkeiten (50 Bit); zusammen mit der Drosselung ist Erraten aussichtslos.
 - **Benachrichtigung:** Jede Nutzung eines Codes und jeder in der Wiederherstellungssitzung eingerichtete Faktor wird ins Audit-Log geschrieben und per Push und Mail an den Nutzer und die Admins gemeldet. So fällt ein gestohlener Code sofort auf.
 - **Restbestand:** Nach der Nutzung zeigt die App, wie viele Codes übrig sind, und bietet an, einen neuen Satz zu erzeugen (der alte wird dann ungültig). Das erfordert eine normale starke Anmeldung.
@@ -296,7 +297,7 @@ Der Server-Teil exportiert eine Funktion `register(ctx)`. Über `ctx` bekommt da
 |---|---|---|
 | `ctx.routes` | immer | Routen unter `/api/v1/plugins/<id>/`, mit JSON-Schema-Validierung |
 | `ctx.db` | `storage:own` | Datenbankverbindung mit der Rolle des Plugins (nur eigenes Schema) |
-| `ctx.sync` | `sync` | Objekttypen registrieren, Konflikteinheiten und Prüfregeln festlegen (Abschnitt 9) |
+| `ctx.sync` | `sync` | Objekttypen registrieren, Konflikteinheiten und Prüfregeln festlegen (Abschnitt 9); Sync-Objekte lesen und ändern, aber nur **im Namen eines Nutzers** (aus der aktuellen Anfrage), mit automatischer Rechteprüfung `can(...)` im Kern und denselben Regeln wie der Sync-Endpunkt |
 | `ctx.access` | immer | `can(...)` für eigene Objekte, Freigaben verwalten |
 | `ctx.notify` | `notify` | Benachrichtigungen an Nutzer senden |
 | `ctx.jobs` | `jobs` | zeitgesteuerte Aufgaben |
@@ -307,6 +308,7 @@ Wie im Gesamtkonzept beschrieben, ist das eine Schutzschicht gegen Fehler, keine
 
 - Ein Lint-Regelsatz für Plugins verbietet direkte Importe von `node:fs`, `node:net`, `node:child_process`, `pg` usw.; CI bricht bei Verstößen ab.
 - Plugins werden nur von Christian signiert, nachdem der Code im Repo reviewt wurde.
+- **Rechte auf Plugin-Daten:** Jede Plugin-Route bekommt den angemeldeten Nutzer aus der Anfrage; ein Aufruf ohne Nutzer ist nur für Jobs möglich und läuft dann als Plugin selbst, ohne Zugriff auf Sync-Objekte anderer Plugins. Für Daten, die ein Plugin im eigenen Schema hält (nicht synchronisiert), ist das Plugin selbst für die Prüfung mit `ctx.access.can(...)` zuständig; das Plugin-SDK bietet dafür Helfer, und die Plugin-Vorlage enthält Pflicht-Tests, die Zugriffe ohne Recht (anderer Nutzer, Kind, Gast) ablehnen müssen. Der Review vor dem Signieren prüft das ausdrücklich.
 
 ### 8.4 UI-Teil
 
@@ -523,3 +525,4 @@ Alle abgerufen am 2026-11-08. Verweise „GK Qn“ beziehen sich auf die Quellen
 - [K14] PostgreSQL 18, Transaction Isolation, 13.2.1 Read Committed („the would-be updater will wait for the first updating transaction to commit or roll back … apply its operation to the updated version of the row“). https://www.postgresql.org/docs/current/transaction-iso.html
 - [K15] Douglas Crockford, Base 32 (10 Ziffern und 22 Buchstaben, ohne I, L, O, U). https://www.crockford.com/base32.html
 - [K16] PostgreSQL 18, CREATE FUNCTION, Abschnitt „Writing SECURITY DEFINER Functions Safely“ (festen `search_path` setzen, `EXECUTE` gezielt vergeben). https://www.postgresql.org/docs/current/sql-createfunction.html
+- [K17] OWASP, Slow Down Online Guessing Attacks with Device Cookies (vertrauenswürdige Geräte einzeln drosseln, unbekannte Geräte gemeinsam je Konto). https://owasp.org/www-community/Slow_Down_Online_Guessing_Attacks_with_Device_Cookies
