@@ -244,9 +244,11 @@ server/index.js    Server-Teil (gebündeltes ES-Modul)
 ui/                UI-Teil (gebündelte ES-Module, CSS, Bilder)
 migrations/        SQL-Migrationen für das eigene Schema
 i18n/de.json, en.json
-FILES.sha256       SHA-256 jeder Datei
+FILES.sha256       SHA-256 jeder Datei außer FILES.sha256 und SIGNATURE
 SIGNATURE          Ed25519-Signatur über FILES.sha256, plus ID des Signaturschlüssels
 ```
+
+**Reihenfolge ohne Zirkelbezug:** `FILES.sha256` listet alle Dateien des Pakets außer sich selbst und `SIGNATURE` (eine Zeile je Datei: Hash in Hex, Leerzeichen, relativer Pfad mit `/`, UTF-8, nach Pfad sortiert, Zeilenende `\n`). `SIGNATURE` signiert genau die Bytes von `FILES.sha256`. Damit deckt die Signatur über `FILES.sha256` indirekt jede andere Datei ab, auch `manifest.json`. Das Signierwerkzeug schreibt zuerst `FILES.sha256`, dann `SIGNATURE`; der Kern prüft in umgekehrter Reihenfolge (erst Signatur, dann Hashes). „Keine zusätzlichen Dateien“ in 8.2 heißt: Außer den in `FILES.sha256` gelisteten Dateien gibt es nur genau diese beiden.
 
 **Manifest (Beispiel):**
 
@@ -266,7 +268,7 @@ SIGNATURE          Ed25519-Signatur über FILES.sha256, plus ID des Signaturschl
 ### 8.2 Prüfung und Installation
 
 1. Admin lädt das Paket im Admin-Bereich hoch (nur Heimnetz, starke Anmeldung).
-2. Der Kern prüft: Signatur gültig und Schlüssel aktiv, jede Datei passt zu `FILES.sha256`, keine zusätzlichen Dateien, nur normale Dateien und Verzeichnisse (keine symbolischen oder harten Links, keine Gerätedateien), Pfade ohne `..` und ohne absolute Pfade, Größenlimit beim Entpacken, `coreApi` passt zur Kernversion.
+2. Der Kern prüft: Signatur gültig und Schlüssel aktiv, jede Datei passt zu `FILES.sha256`, keine zusätzlichen Dateien (außer `FILES.sha256` und `SIGNATURE`), nur normale Dateien und Verzeichnisse (keine symbolischen oder harten Links, keine Gerätedateien), Pfade ohne `..` und ohne absolute Pfade, Größenlimit beim Entpacken, `coreApi` passt zur Kernversion.
 3. Der Admin sieht die verlangten Rechte und bestätigt sie.
 4. Der Kern legt Schema und Datenbankrolle an, führt die Migrationen in einer Transaktion aus und aktiviert das Plugin.
 5. **Bei jedem Start** wiederholt der Kern vor dem Laden jedes Plugins die vollständige Prüfung aus Schritt 2, soweit sie die installierten Dateien betrifft: Die Ed25519-Signatur über `FILES.sha256` muss gültig sein, der Signaturschlüssel muss in `signing_keys` noch aktiv sein und die ID aus `plugins` tragen, jede Datei muss zu ihrem Hash passen, und es dürfen keine zusätzlichen Dateien oder Links vorhanden sein. Ein reiner Hash-Vergleich würde nicht reichen, weil ein Angreifer mit Schreibzugriff sonst eine Datei und ihren Eintrag in `FILES.sha256` gemeinsam austauschen könnte. Schlägt etwas fehl, wird das Plugin nicht geladen, und ein Alarm geht raus.
