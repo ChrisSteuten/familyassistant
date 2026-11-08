@@ -122,7 +122,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 | `recovery_links` | Hash des Tokens eines Wiederherstellungslinks vom Admin, Nutzer, ausgestellt von, Ablauf, verwendet am (Abschnitt 6.6) |
 | `devices` | Gerät je Nutzer: Name, angelegt, zuletzt gesehen, Status, **Geräteschlüssel** (feldverschlüsselt, GK 3.4.3) |
 | `sessions` | Hash des Sitzungstokens, Gerät, angelegt, zuletzt aktiv, Ablauf, Art (normal oder Wiederherstellung), Zeitpunkt der letzten starken Anmeldung |
-| `login_throttle` | bestätigte Fehlversuche je Konto und je IP-Präfix, Zeitpunkt des zuletzt zugelassenen Versuchs |
+| `login_throttle` | bestätigte Fehlversuche je Konto und je IP-Präfix (beim IP-Präfix mit Zeitpunkten für das 24-Stunden-Fenster), Zeitpunkt des zuletzt zugelassenen Versuchs |
 | `login_inflight` | laufende Anmeldeversuche: Konto, IP-Präfix, Ablauf (Abschnitt 6.3) |
 | `groups`, `group_members` | Gruppen und Mitgliedschaften |
 | `grants` | Rechte: wer (Nutzer/Gruppe) darf was (Aktion) auf welchem Objekt oder Plugin |
@@ -172,6 +172,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 ### 6.3 Drosselung bei Fehlversuchen (E9)
 
 - Zähler je Konto und je IP-Präfix (IPv4: /32, IPv6: /64, weil ein einzelner IPv6-Anschluss viele Adressen hat).
+- **IP-Zähler verfällt:** Beim IP-Präfix zählen nur bestätigte Fehlversuche der letzten 24 Stunden (gleitendes Zeitfenster). Hinter einer IPv4-Adresse sitzen oft mehrere Menschen (z. B. alle Geräte eines Haushalts hinter dem Router); ohne Verfall würden alte Fehlversuche einer Person dauerhaft alle anderen ausbremsen. Anfragen aus dem Heimnetz (private Adressen, wie beim Admin-Bereich, 11.7) haben keinen IP-Zähler, dort gilt nur der Kontozähler. Der Kontozähler verfällt nicht; er wird nur durch eine erfolgreiche Anmeldung zurückgesetzt. Ein Test prüft, dass Fehlversuche einer Person nach 24 Stunden andere Nutzer am selben Anschluss nicht mehr bremsen.
 - Die ersten 5 Fehlversuche sind frei. Danach muss vor jedem weiteren Versuch eine Wartezeit vergehen, die sich jeweils verdoppelt: 1 s, 2 s, 4 s … bis höchstens 1 Stunde. Ein Erfolg setzt den Kontozähler zurück.
 - Die Wartezeit gilt auch für richtige Passwörter, damit sie nicht durch Ausprobieren umgangen werden kann.
 - **Keine Umgehung durch parallele Anfragen:** Bestätigte Fehlversuche und laufende Versuche werden getrennt geführt.
