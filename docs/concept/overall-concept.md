@@ -35,19 +35,19 @@ Dieses Dokument beschreibt das Gesamtbild über alle Phasen. Es legt Architektur
 
 ## 2. Phasenplan
 
-Beschlossen sind die Phasen 1 bis 4. Die Reihenfolge ab Phase 5 ist ein **Vorschlag** (siehe Entscheidung E3 in Abschnitt 11).
+Beschlossen sind die Phasen 0 bis 3. Die Reihenfolge ab Phase 4 ist ein **Vorschlag** (siehe Entscheidung E3 in Abschnitt 11).
 
 | Nr. | Phase | Ergebnis | Abschlusskriterium |
 |---|---|---|---|
-| 1 | Gesamtkonzept | Dieses Dokument | Christian gibt frei |
-| 2 | Kern | Server, Anmeldung, Nutzer und Rechte, Plugin-System, Sync- und Offline-Grundlage, i18n, Benachrichtigungen, Logging, Entwicklungs- und Testumgebung, CI | Alle Kernfunktionen mit automatischen Tests, Sicherheitsreview ohne offene Befunde |
-| 3 | Einkaufslisten | Erstes Plugin, beweist Plugin-System und Offline-Sync an einem einfachen Fall | Mehrere Nutzer bearbeiten gleichzeitig und offline, Konflikte werden korrekt aufgelöst |
-| 4 | Kalender | CalDAV-Server, Kalender in der PWA, Anbindung externer Kalender (Google, iCloud) | iOS-Kalender und DAVx⁵ synchronisieren fehlerfrei, PWA offline nutzbar |
-| 5 | Datensicherung (Vorschlag) | Eigenes Backup mit Deduplizierung, Kompression, Verschlüsselung, Online-Kopie | Erfolgreicher Wiederherstellungstest auf leerem System |
-| 6 | Live-Betrieb und Hardware (Vorschlag) | Server zu Hause, Domain, TLS, Härtung, Monitoring, USV, Notfallhandbuch | Sicherheitsprüfung von außen (Portscan, TLS-Test, Anmeldeangriffe) ohne Befunde, Notfallhandbuch von Christians Freundin nachvollzogen |
-| 7 | Fotoalben | Foto- und Video-Verwaltung mit Alben und Freigaben | Upload vom Handy, Alben, Backup der Fotos geprüft |
-| 8 | Android-Sync-App | Native App, die Kalender (und später weitere Daten) direkt mit dem Server synchronisiert und DAVx⁵ ablöst | Gleichwertiger Ersatz für DAVx⁵ im Alltag |
-| 9 | Smart Home | Steuerung und Automationen für Geräte im Haus | Nur lokal steuerbar, sicherheitsgeprüft |
+| 0 | Gesamtkonzept | Dieses Dokument | Christian gibt frei |
+| 1 | Kern | Server, Anmeldung, Nutzer und Rechte, Plugin-System, Sync- und Offline-Grundlage, i18n, Benachrichtigungen, Logging, Entwicklungs- und Testumgebung, CI | Alle Kernfunktionen mit automatischen Tests, Sicherheitsreview ohne offene Befunde |
+| 2 | Einkaufslisten | Erstes Plugin, beweist Plugin-System und Offline-Sync an einem einfachen Fall | Mehrere Nutzer bearbeiten gleichzeitig und offline, Konflikte werden korrekt aufgelöst |
+| 3 | Kalender | CalDAV-Server, Kalender in der PWA, Anbindung externer Kalender (Google, iCloud) | iOS-Kalender und DAVx⁵ synchronisieren fehlerfrei, PWA offline nutzbar |
+| 4 | Datensicherung (Vorschlag) | Eigenes Backup mit Deduplizierung, Kompression, Verschlüsselung, Online-Kopie | Erfolgreicher Wiederherstellungstest auf leerem System |
+| 5 | Live-Betrieb und Hardware (Vorschlag) | Server zu Hause, Domain, TLS, Härtung, Monitoring, USV, Notfallhandbuch | Sicherheitsprüfung von außen (Portscan, TLS-Test, Anmeldeangriffe) ohne Befunde, Notfallhandbuch von Christians Freundin nachvollzogen |
+| 6 | Fotoalben | Foto- und Video-Verwaltung mit Alben und Freigaben | Upload vom Handy, Alben, Backup der Fotos geprüft |
+| 7 | Android-Sync-App | Native App, die Kalender (und später weitere Daten) direkt mit dem Server synchronisiert und DAVx⁵ ablöst | Gleichwertiger Ersatz für DAVx⁵ im Alltag |
+| 8 | Smart Home | Steuerung und Automationen für Geräte im Haus | Nur lokal steuerbar, sicherheitsgeprüft |
 
 **Begründung der vorgeschlagenen Reihenfolge:** Echte, private Daten sollten erst dann dauerhaft auf dem Server liegen, wenn eine funktionierende, getestete Datensicherung existiert. Deshalb kommt die Datensicherung vor dem Live-Betrieb, und der Live-Betrieb vor den Fotoalben, weil Fotos den größten Teil der erwarteten rund 2 TB ausmachen dürften. Bis zum Live-Betrieb läuft alles in der lokalen Testumgebung.
 
@@ -72,7 +72,7 @@ Jede Phase durchläuft denselben Ablauf (Abschnitt 10). Eine Phase beginnt erst 
  │ DAVx⁵ (Android)    │           │  ├─ Sync-Engine + Konfliktlogik          │
  ├────────────────────┤           │  ├─ Benachrichtigungen (Web Push, Mail)  │
  │ Android-Sync-App   │◄─API─────►│  ├─ Jobs, Audit-Log, Monitoring          │
- │ (Phase 8)          │           │  └─ Plugins: Einkauf, Kalender, ...      │
+ │ (Phase 7)          │           │  └─ Plugins: Einkauf, Kalender, ...      │
  └────────────────────┘           │        │                                 │
                                   │        ▼                                 │
  Externe Dienste                  │ PostgreSQL (ein Schema je Plugin)        │
@@ -94,10 +94,10 @@ Jede Phase durchläuft denselben Ablauf (Abschnitt 10). Eine Phase beginnt erst 
 | UI | Schlankes Komponenten-Framework (Kandidaten: Svelte, Preact, Lit) | Wahl im Kern-Konzept nach Bundle-Größe, Offline-Tauglichkeit und Testbarkeit. |
 | iCalendar | ical.js | Parser und Wiederholungsregeln (RRULE) sind fehleranfällig; eine etablierte Bibliothek ist hier sicherer als Eigenbau. |
 | Krypto im Browser | Web Crypto API für AES-GCM; Argon2id über eine etablierte WASM-Bibliothek | Argon2id wird für den Offline-Schlüssel gebraucht (3.4.3). |
-| Android-App (Phase 8) | Kotlin | Plattformstandard. |
+| Android-App (Phase 7) | Kotlin | Plattformstandard. |
 | Betriebssystem Server | Debian stable | Lange Sicherheitsunterstützung, `unattended-upgrades` für automatische Sicherheitsupdates. |
 
-**Alternative, ehrlich bewertet:** Für Go gibt es mit `emersion/go-webdav` eine Bibliothek mit CalDAV-Unterstützung (Umfang wäre noch zu prüfen), und Go liefert eine einzelne Binärdatei. Dagegen spricht, dass Plugins zur Laufzeit nachgeladen werden sollen, was in Go nur eingeschränkt möglich ist, und dass Client und Server dann zwei Sprachen hätten. Bei TypeScript wird die CalDAV-Protokollschicht (WebDAV-Methoden, XML) selbst gebaut, was zum Grundsatz „selbst entwickeln“ passt, aber Aufwand und Testbedarf in Phase 4 erhöht.
+**Alternative, ehrlich bewertet:** Für Go gibt es mit `emersion/go-webdav` eine Bibliothek mit CalDAV-Unterstützung (Umfang wäre noch zu prüfen), und Go liefert eine einzelne Binärdatei. Dagegen spricht, dass Plugins zur Laufzeit nachgeladen werden sollen, was in Go nur eingeschränkt möglich ist, und dass Client und Server dann zwei Sprachen hätten. Bei TypeScript wird die CalDAV-Protokollschicht (WebDAV-Methoden, XML) selbst gebaut, was zum Grundsatz „selbst entwickeln“ passt, aber Aufwand und Testbedarf in Phase 3 erhöht.
 
 ### 3.3 Kern und Plugins
 
@@ -151,7 +151,7 @@ Einkaufslisten und Kalender werden selbst als Plugins gebaut. So wird das Plugin
 | Familienmitglied überschreitet Rechte | Rechteprüfung serverseitig bei jedem Zugriff, nie nur in der Oberfläche. |
 | Online-Backup-Anbieter | Daten werden vor dem Upload verschlüsselt, der Anbieter sieht nur Chiffretext. |
 | Push-Dienste (Google, Apple, Mozilla) | Web-Push-Nachrichten sind Ende-zu-Ende verschlüsselt [Q1]; der Push-Dienst sieht nur Metadaten. Inhalte trotzdem knapp halten. |
-| Diebstahl des Servers / der Platten | Festplattenverschlüsselung (Details und Entsperren nach Stromausfall in Phase 6, Entscheidung E8), zusätzlich Feldverschlüsselung sensibler Daten. |
+| Diebstahl des Servers / der Platten | Festplattenverschlüsselung (Details und Entsperren nach Stromausfall in Phase 5, Entscheidung E8), zusätzlich Feldverschlüsselung sensibler Daten. |
 
 #### 3.4.2 Anmeldung und Sitzungen
 
@@ -198,7 +198,7 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 - Clients merken sich den Stand, auf dem eine Änderung beruht (Basis), und senden die Änderung mit dieser Revision und einer eindeutigen Änderungs-ID, damit ein wiederholtes Senden nichts doppelt ausführt.
 - **Konfliktlösung im Kern:** Hat sich das Objekt seitdem geändert, führt der Server einen Drei-Wege-Abgleich auf Feldebene durch (Basis, Server, Client). Wurden verschiedene Felder geändert, werden beide Änderungen übernommen. Wurde dasselbe Feld geändert, bleibt der Serverstand gültig, und die Client-Version wird als **Konfliktkopie** gespeichert, die der Nutzer sieht und auflösen kann. Es geht also nie stillschweigend etwas verloren.
 - Plugins können für eigene Datentypen feinere Regeln festlegen, etwa Einkaufslisten als einzelne Operationen („Artikel hinzufügen“, „abhaken“), die sich fast immer konfliktfrei zusammenführen lassen.
-- **CalDAV-Besonderheit:** CalDAV-Clients senden Änderungen mit `If-Match` und dem bekannten `ETag`. Passt der `ETag` nicht mehr, antwortet der Server nach HTTP-Standard mit `412 Precondition Failed` [Q23]. Das schützt den Serverstand davor, überschrieben zu werden. Was der Client danach mit seiner abgelehnten Änderung macht, legt der Standard nicht fest (z. B. erneut versuchen, verwerfen oder dem Nutzer anzeigen). Damit trotzdem nichts verloren geht, **speichert der Server den abgelehnten Inhalt selbst als Konfliktkopie**, bevor er mit 412 antwortet. Die Konfliktkopie ist kein CalDAV-Objekt, damit Clients sie nicht als zweiten Termin anzeigen; der Nutzer sieht sie in der PWA und kann sie übernehmen oder verwerfen. Wie sich iOS-Kalender und DAVx⁵ bei gleichzeitigen Offline-Änderungen tatsächlich verhalten (etwa ob sie die Änderung erneut senden und so doppelte Konfliktkopien entstehen), wird in Phase 4 gezielt getestet und im Kalender-Konzept dokumentiert.
+- **CalDAV-Besonderheit:** CalDAV-Clients senden Änderungen mit `If-Match` und dem bekannten `ETag`. Passt der `ETag` nicht mehr, antwortet der Server nach HTTP-Standard mit `412 Precondition Failed` [Q23]. Das schützt den Serverstand davor, überschrieben zu werden. Was der Client danach mit seiner abgelehnten Änderung macht, legt der Standard nicht fest (z. B. erneut versuchen, verwerfen oder dem Nutzer anzeigen). Damit trotzdem nichts verloren geht, **speichert der Server den abgelehnten Inhalt selbst als Konfliktkopie**, bevor er mit 412 antwortet. Die Konfliktkopie ist kein CalDAV-Objekt, damit Clients sie nicht als zweiten Termin anzeigen; der Nutzer sieht sie in der PWA und kann sie übernehmen oder verwerfen. Wie sich iOS-Kalender und DAVx⁵ bei gleichzeitigen Offline-Änderungen tatsächlich verhalten (etwa ob sie die Änderung erneut senden und so doppelte Konfliktkopien entstehen), wird in Phase 3 gezielt getestet und im Kalender-Konzept dokumentiert.
 - **Keine Hintergrund-Synchronisation unter iOS:** Die Background Sync API wird von Safari nicht unterstützt [Q9]. Die PWA synchronisiert daher beim Öffnen, beim Wiederherstellen der Verbindung und periodisch, solange sie offen ist. Nicht synchronisierte Änderungen zeigt die Oberfläche deutlich an.
 
 ### 3.6 Sprache im Code, Mehrsprachigkeit der Oberfläche
@@ -217,7 +217,7 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 ### 3.7 Benachrichtigungen
 
 - **Web Push** als Hauptweg (Push API mit Service Worker, Verschlüsselung nach RFC 8291 [Q1], Server-Identifikation mit VAPID nach RFC 8292 [Q10]).
-- **iOS:** Web Push gibt es dort ab iOS/iPadOS 16.4 und nur für Web-Apps, die zum Home-Bildschirm hinzugefügt wurden. Die Erlaubnis muss durch eine direkte Nutzeraktion angefragt werden [Q11]. Die Einrichtung erklärt das Schritt für Schritt. Hinweis: Die Quelle beschreibt die Beta von 16.4; dass Web Push in der aktuellen iOS-Version wie beschrieben funktioniert, wird in Phase 2 auf dem iPhone von Christians Freundin geprüft.
+- **iOS:** Web Push gibt es dort ab iOS/iPadOS 16.4 und nur für Web-Apps, die zum Home-Bildschirm hinzugefügt wurden. Die Erlaubnis muss durch eine direkte Nutzeraktion angefragt werden [Q11]. Die Einrichtung erklärt das Schritt für Schritt. Hinweis: Die Quelle beschreibt die Beta von 16.4; dass Web Push in der aktuellen iOS-Version wie beschrieben funktioniert, wird in Phase 1 auf dem iPhone von Christians Freundin geprüft.
 - **Mail** über einen externen Anbieter oder Relay mit eigener Domain, mit SPF, DKIM und DMARC, damit Mails nicht im Spam landen.
 - Nutzer stellen je Plugin und Ereignis ein, ob und wie sie benachrichtigt werden.
 
@@ -228,11 +228,11 @@ Grundsatz: **Der Server ist die einzige verbindliche Quelle.** Alle Wege (PWA, C
 - **Ausnahme Kalender im Betriebssystem (Entscheidung E12):** Über CalDAV (iOS-Kalender, DAVx⁵) und später die Android-Sync-App landen Termine im Kalenderspeicher des Betriebssystems. Diese Kopien verschlüsselt nicht die PWA, sie sind für Kalender-Apps auf dem Gerät lesbar, und das Abmelden in der PWA oder das Widerrufen des App-Passworts löscht sie nicht. Die Zusage „verschlüsselt, nur nach Anmeldung sichtbar, beim Abmelden gelöscht“ gilt daher nur für den Speicher der PWA. Vorschlag für diese Ausnahme:
   - Kalender-Sync aufs Betriebssystem nur auf Geräten mit Bildschirmsperre und eingeschalteter Geräteverschlüsselung.
   - Sensible Kalender können vom CalDAV-Sync ausgeschlossen werden und sind dann nur in der PWA sichtbar.
-  - Beim Entfernen eines Geräts muss das Konto auf dem Gerät gelöscht werden (in DAVx⁵ bzw. in den iOS-Einstellungen). Ob dabei die lokal gespeicherten Termine zuverlässig mit gelöscht werden, ist nicht verifiziert und wird in Phase 4 auf beiden Systemen geprüft. Die eigene Android-App (Phase 8) löscht ihre Termine beim Entfernen des Kontos und, sobald der Server das Gerät gesperrt hat, beim nächsten Kontakt.
+  - Beim Entfernen eines Geräts muss das Konto auf dem Gerät gelöscht werden (in DAVx⁵ bzw. in den iOS-Einstellungen). Ob dabei die lokal gespeicherten Termine zuverlässig mit gelöscht werden, ist nicht verifiziert und wird in Phase 3 auf beiden Systemen geprüft. Die eigene Android-App (Phase 7) löscht ihre Termine beim Entfernen des Kontos und, sobald der Server das Gerät gesperrt hat, beim nächsten Kontakt.
 
 ---
 
-## 4. Kern – Phase 2 (Umriss)
+## 4. Kern – Phase 1 (Umriss)
 
 Umfang:
 
@@ -256,11 +256,11 @@ Geplante Repository-Struktur (Namen englisch):
 /plugins/calendar
 /packages/shared Gemeinsame Typen, Validierung, i18n-Werkzeuge
 /tools/signer    Signierwerkzeug (läuft nur auf Christians Rechner)
-/android         Android-Sync-App (Phase 8)
+/android         Android-Sync-App (Phase 7)
 /docs            Konzepte, Entscheidungen, Notfallhandbuch
 ```
 
-## 5. Einkaufslisten – Phase 3 (Umriss)
+## 5. Einkaufslisten – Phase 2 (Umriss)
 
 - Mehrere Listen, je Liste festlegbar, wer sie sieht und bearbeitet.
 - Artikel mit Menge, Einheit, optional Kategorie (z. B. nach Gang im Supermarkt sortierbar), abhaken, rückgängig machen.
@@ -268,7 +268,7 @@ Geplante Repository-Struktur (Namen englisch):
 - Live-Aktualisierung auf anderen Geräten, solange die App offen ist; optional Benachrichtigung bei Änderungen.
 - Schlanker Start; Ausbau (z. B. Vorschläge aus häufigen Artikeln) erst nach Test im Alltag.
 
-## 6. Kalender – Phase 4 (Umriss)
+## 6. Kalender – Phase 3 (Umriss)
 
 - **Eigener CalDAV-Server** (RFC 4791 [Q8]) als verbindliche Quelle, mit `sync-collection` (RFC 6578 [Q7]) für effiziente Synchronisation. Daten im iCalendar-Format (RFC 5545 [Q13]).
 - **iOS:** Der eingebaute Kalender kann CalDAV-Konten direkt einbinden, ohne Zusatz-App (laut [Q14]: Einstellungen → Apps → Kalender → Kalenderaccounts → Account hinzufügen → Andere → CalDAV-Account; die genaue Menübezeichnung hängt von der iOS-Version ab). iOS verlangt dafür eine verschlüsselte Verbindung [Q14].
@@ -280,12 +280,12 @@ Geplante Repository-Struktur (Namen englisch):
   - **Richtung:** Vorschlag, zunächst nur Einlesen (externe Kalender werden im Familienkalender angezeigt) und Zwei-Wege-Sync erst später (Entscheidung E4).
 - Kompatibilitätstests mit echten Clients (iOS-Kalender, DAVx⁵) sind Pflicht, weil Clients CalDAV unterschiedlich auslegen.
 
-## 7. Datensicherung – Phase 5 (Umriss)
+## 7. Datensicherung – Phase 4 (Umriss)
 
 - **Eigenes Backup-Programm:** Inhaltsbasierte Aufteilung in Blöcke (Deduplizierung), Kompression mit zstd, danach Verschlüsselung mit einem authentisierten Verfahren (AES-256-GCM oder XChaCha20-Poly1305 aus einer etablierten Bibliothek). Reihenfolge „erst komprimieren, dann verschlüsseln“ ist beschlossen, weil verschlüsselte Daten sich nicht mehr komprimieren lassen.
 - Mögliches Restrisiko, im Phasenkonzept zu bewerten: Bei deduplizierenden, komprimierten Backups könnte ein Speicheranbieter aus Anzahl und Größe der Blöcke Rückschlüsse auf Inhalte ziehen. Gegenmaßnahmen (z. B. Auffüllen auf feste Größen) werden dort untersucht.
 - **Datenbank** konsistent sichern (Snapshot bzw. `pg_dump`), nicht nur Dateien kopieren.
-- **3-2-1:** drei Kopien, zwei Medien, eine außer Haus (Online-Speicher, verschlüsselt von Anfang an). Wichtig: RAID ist kein Backup. Als zweites lokales Medium wird zusätzlich eine externe Platte gebraucht (Hardware-Liste in Phase 6).
+- **3-2-1:** drei Kopien, zwei Medien, eine außer Haus (Online-Speicher, verschlüsselt von Anfang an). Wichtig: RAID ist kein Backup. Als zweites lokales Medium wird zusätzlich eine externe Platte gebraucht (Hardware-Liste in Phase 5).
 - **Dauer der ersten Online-Sicherung:** 2 TB bei 50 Mbit/s dauern rechnerisch rund 3,7 Tage Dauer-Upload (2 × 10¹² Byte × 8 / 50 × 10⁶ bit/s ≈ 320 000 s), in der Praxis länger. Danach laufen nur noch Änderungen. Der Upload wird gedrosselt, damit der Anschluss nutzbar bleibt.
 - **Schlüsselmodell (Entscheidung E13):** Ein Backup, das nachts unbeaufsichtigt läuft, braucht auf dem Server einen Schlüssel zum Verschlüsseln. Damit trotzdem der Entschlüsselungsschlüssel nur bei Christian liegt, wird ein Verfahren mit öffentlichem Schlüssel vorgeschlagen:
   - Für jeden Backup-Lauf erzeugt der Server zufällige Datenschlüssel und verschlüsselt sie mit dem **öffentlichen Wiederherstellungsschlüssel**. Der zugehörige **private Wiederherstellungsschlüssel** liegt nur bei Christian und ausgedruckt; der Server kann seine eigenen Backups nicht entschlüsseln.
@@ -296,7 +296,7 @@ Geplante Repository-Struktur (Namen englisch):
 - **Schlüssel** (privater Wiederherstellungsschlüssel) nur bei Christian und ausgedruckt an einem sicheren Ort. Ohne Schlüssel ist das Backup wertlos, deshalb gehört das Wiederherstellen ins Notfallhandbuch. **Zielkonflikt:** Wenn Christian ausfällt, kann seine Freundin ohne Zugang zum ausgedruckten Schlüssel nichts wiederherstellen. Vorschlag: Der Ausdruck liegt versiegelt an einem Ort, den das Notfallhandbuch nennt (Entscheidung E11).
 - Wahl des Online-Speichers (z. B. S3-kompatibel) im Phasenkonzept.
 
-## 8. Live-Betrieb und Hardware – Phase 6 (Umriss)
+## 8. Live-Betrieb und Hardware – Phase 5 (Umriss)
 
 - **Hardware (festgehalten):** RAID 6 mit 4 × 4 TB, Gehäuse mit mindestens 4 Einschüben, USV; zusätzlich vorgeschlagen eine externe Platte für die lokale Backup-Kopie (7). RAID 6 mit vier Platten ergibt rund 8 TB (etwa 7,3 TiB) nutzbar, genug für die erwarteten 2 TB plus Wachstum, und verkraftet den Ausfall von zwei Platten. Software-RAID (mdadm) oder ZFS (RAID-Z2) wird im Phasenkonzept entschieden.
 - **Internetanschluss prüfen:** Manche Anschlüsse nutzen DS-Lite (RFC 6333 [Q18]); dann gibt es keine eigene öffentliche IPv4-Adresse, und eine IPv4-Portfreigabe ist nicht möglich. Christian hat angegeben, dass sein Anschluss öffentlich erreichbar ist. Das wird vor dem Live-Gang konkret geprüft (öffentliche IPv4 und/oder IPv6, DynDNS-Fähigkeit des Routers).
@@ -309,13 +309,13 @@ Geplante Repository-Struktur (Namen englisch):
 - **Notfallhandbuch** auf Papier und digital, verständlich auch für Christians Freundin: Wer hat welche Schlüssel, wie stellt man aus dem Backup wieder her, wen ruft man an.
 - **Datenschutz:** Die DSGVO gilt nicht für Verarbeitung durch natürliche Personen „zur Ausübung ausschließlich persönlicher oder familiärer Tätigkeiten“ (Art. 2 Abs. 2 lit. c DSGVO [Q19]). Die Schutzmaßnahmen werden trotzdem so umgesetzt, als würde sie gelten.
 
-## 9. Fotoalben, Android-App, Smart Home – Phasen 7 bis 9 (Umriss)
+## 9. Fotoalben, Android-App, Smart Home – Phasen 6 bis 8 (Umriss)
 
-**Phase 7 Fotoalben:** Upload von Handy und PC, Alben, Freigaben je Person, Vorschaubilder, Metadaten (Datum, Ort), Suche nach Datum. Offene Punkte für das Phasenkonzept: Bilddekodierung (HEIC vom iPhone, Videos) braucht etablierte Bibliotheken, die über die bisher freigegebenen Bereiche hinausgehen; das wird dort als Entscheidung vorgelegt. Vorschlag, der vom Grundsatz „alles offline“ abweicht und daher im Phasenkonzept zur Entscheidung vorgelegt wird: Offline-Zugriff bei Fotos nur für ausgewählte Alben, weil der Gerätespeicher begrenzt ist.
+**Phase 6 Fotoalben:** Upload von Handy und PC, Alben, Freigaben je Person, Vorschaubilder, Metadaten (Datum, Ort), Suche nach Datum. Offene Punkte für das Phasenkonzept: Bilddekodierung (HEIC vom iPhone, Videos) braucht etablierte Bibliotheken, die über die bisher freigegebenen Bereiche hinausgehen; das wird dort als Entscheidung vorgelegt. Vorschlag, der vom Grundsatz „alles offline“ abweicht und daher im Phasenkonzept zur Entscheidung vorgelegt wird: Offline-Zugriff bei Fotos nur für ausgewählte Alben, weil der Gerätespeicher begrenzt ist.
 
-**Phase 8 Android-Sync-App:** Kotlin-App, die sich als Konto in Android einträgt und Termine (später auch Kontakte, Aufgaben) direkt über die Sync-API des Kerns mit dem Android-Kalenderspeicher abgleicht, mit derselben Konfliktlogik. Ersetzt DAVx⁵. Verteilung als selbst signierte APK, kein Play Store nötig.
+**Phase 7 Android-Sync-App:** Kotlin-App, die sich als Konto in Android einträgt und Termine (später auch Kontakte, Aufgaben) direkt über die Sync-API des Kerns mit dem Android-Kalenderspeicher abgleicht, mit derselben Konfliktlogik. Ersetzt DAVx⁵. Verteilung als selbst signierte APK, kein Play Store nötig.
 
-**Phase 9 Smart Home:** Höchstes Risiko, weil Fehler physische Folgen haben (Heizung, Türen). Grundsätze: Steuerung nur lokal, keine Cloud der Hersteller, eigene Rechte für Steuern und Ansehen, alles protokolliert, sicherer Zustand bei Ausfall. Welche Funkstandards (z. B. Zigbee, Matter, WLAN-Geräte) und wie viel davon selbst entwickelt wird, ist offen; vollständige Funkprotokoll-Stacks selbst zu schreiben wäre sehr aufwendig und wird im Phasenkonzept ehrlich bewertet.
+**Phase 8 Smart Home:** Höchstes Risiko, weil Fehler physische Folgen haben (Heizung, Türen). Grundsätze: Steuerung nur lokal, keine Cloud der Hersteller, eigene Rechte für Steuern und Ansehen, alles protokolliert, sicherer Zustand bei Ausfall. Welche Funkstandards (z. B. Zigbee, Matter, WLAN-Geräte) und wie viel davon selbst entwickelt wird, ist offen; vollständige Funkprotokoll-Stacks selbst zu schreiben wäre sehr aufwendig und wird im Phasenkonzept ehrlich bewertet.
 
 ---
 
@@ -334,11 +334,11 @@ Geplante Repository-Struktur (Namen englisch):
 |---|---|---|
 | E1 | Technologie-Stack | TypeScript (Node.js LTS) + PostgreSQL, UI-Framework im Kern-Konzept |
 | E2 | TLS / Reverse Proxy | nginx + certbot aus Debian |
-| E3 | Reihenfolge ab Phase 5 | Datensicherung → Live-Betrieb → Fotoalben → Android-App → Smart Home |
+| E3 | Reihenfolge ab Phase 4 | Datensicherung → Live-Betrieb → Fotoalben → Android-App → Smart Home |
 | E4 | Externe Kalender: Richtung | Zuerst nur einlesen, Zwei-Wege-Sync später |
 | E5 | Commit-Messages und PR-Titel | Englisch, wie der Code |
 | E6 | Copilot Pro | Wird für Copilot Code Review gebraucht (falls noch nicht vorhanden) |
-| E7 | Externer Totmannschalter für Monitoring | Kleiner externer Dienst, der bei fehlendem Lebenszeichen alarmiert; Auswahl in Phase 6 |
+| E7 | Externer Totmannschalter für Monitoring | Kleiner externer Dienst, der bei fehlendem Lebenszeichen alarmiert; Auswahl in Phase 5 |
 | E8 | Festplattenverschlüsselung am Server | Ja; offen ist, wie der Server nach Stromausfall entsperrt wird (Passphrase vor Ort/per SSH oder TPM) |
 | E9 | Fehlversuche bei der Anmeldung | Ansteigende Wartezeit plus Alarm statt harter Sperre |
 | E10 | Maximale Offline-Dauer ohne Online-Anmeldung | 30 Tage |
