@@ -8,5 +8,5 @@ Concept phase. The overall concept (in German) is in [docs/concept/overall-conce
 
 ## Conventions
 
-- All code, identifiers, comments and commit messages are in English.
+- All code, identifiers and comments are in English.
 - The user interface is multilingual (German and English at launch).
