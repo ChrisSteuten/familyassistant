@@ -400,7 +400,7 @@ In-Prozess-Planer, Aufträge in `core.jobs` gespeichert, damit sie einen Neustar
 ### 11.6 Logging, Audit und Alarme
 
 - **Logs:** strukturiert als JSON (Pino), ohne Passwörter, Tokens, Inhalte privater Objekte. IP-Adressen nur gekürzt (Präfix). Aufbewahrung 30 Tage.
-- **Audit-Log:** nur anhängen, in der Datenbank; Einträge für Anmeldungen, Fehlversuche, Faktor- und Passwortänderungen, Geräte, Rechte, Admin-Aktionen, Plugin-Lebenszyklus. Die Datenbankrolle des Kerns darf in `audit_log` nur einfügen, nicht ändern oder löschen; das Löschen alter Einträge (nach 1 Jahr) macht ein eigener Job mit eigener Rolle.
+- **Audit-Log:** nur anhängen, in der Datenbank; Einträge für Anmeldungen, Fehlversuche, Faktor- und Passwortänderungen, Geräte, Rechte, Admin-Aktionen, Plugin-Lebenszyklus. Die Datenbankrolle des Kerns bekommt auf `audit_log` nur `INSERT` und `SELECT` (für die Anzeige im Admin-Bereich, 11.7), kein `UPDATE`, `DELETE` oder `TRUNCATE`. Eigentümer der Tabelle ist die Migrationsrolle, nicht die Laufzeitrolle, weil ein Eigentümer seine Rechte sonst selbst wieder erweitern könnte. Das Löschen alter Einträge (nach 1 Jahr) macht ein eigener Job mit eigener Rolle, die nur dieses `DELETE` darf.
 - **Alarm-Regeln** in Phase 1: Fehlversuche (6.3), neue Anmeldung eines Admins von einem neuen Gerät, Plugin-Integritätsfehler, wiederholte Fehler in Jobs.
 
 ### 11.7 Admin-Bereich
