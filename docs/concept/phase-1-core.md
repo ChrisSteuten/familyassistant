@@ -125,7 +125,7 @@ Alle Kern-Tabellen liegen im Schema `core`. IDs sind zufällige UUIDs (Version 4
 | `login_throttle` | Fehlversuche je Konto und je IP-Präfix, nächster erlaubter Versuch |
 | `groups`, `group_members` | Gruppen und Mitgliedschaften |
 | `grants` | Rechte: wer (Nutzer/Gruppe) darf was (Aktion) auf welchem Objekt oder Plugin |
-| `plugins` | ID, Version, Status, Manifest, Hash des Pakets, Signaturschlüssel-ID, bestätigte Rechte |
+| `plugins` | ID, Version, Status, Manifest, Hash des Pakets (SHA-256 von `FILES.sha256`), Signaturschlüssel-ID, bestätigte Rechte |
 | `signing_keys` | Öffentliche Signaturschlüssel, Status (aktiv, zurückgezogen) |
 | `sync_objects` | Objekt-ID, Typ, Besitzer-Plugin, aktuelle Revision, gelöscht (Grabstein), Inhalt (JSON, ggf. feldverschlüsselt) |
 | `sync_revision` | eine einzige Zeile mit der zuletzt vergebenen Revision (Abschnitt 9.2) |
